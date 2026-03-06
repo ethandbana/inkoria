@@ -3,9 +3,12 @@ import { useState, useEffect, useCallback } from "react";
 export function useTheme() {
   const [theme, setTheme] = useState<"light" | "dark">(() => {
     if (typeof window !== "undefined") {
-      return document.documentElement.classList.contains("dark") ? "dark" : "light";
+      const saved = localStorage.getItem("theme") as "light" | "dark" | null;
+      if (saved) return saved;
+      document.documentElement.classList.add("dark");
+      return "dark";
     }
-    return "light";
+    return "dark";
   });
 
   useEffect(() => {
