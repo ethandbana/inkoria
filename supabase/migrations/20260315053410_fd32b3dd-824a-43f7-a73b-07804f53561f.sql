@@ -1,0 +1,1 @@
+ALTER TABLE public.profiles ADD COLUMN chat_theme_prefs jsonb DEFAULT '{}'::jsonb;

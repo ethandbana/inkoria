@@ -1,0 +1,45 @@
+import React, { createContext, useContext, useState, useEffect } from 'react';
+
+// Create the context
+const ActivityContext = createContext();
+
+export const ActivityProvider = ({ children, currentUser }) => {
+  const [liveActivities, setLiveActivities] = useState([]);
+  const [friendActivityCount, setFriendActivityCount] = useState(0);
+  const [ephemeralContent, setEphemeralContent] = useState([]);
+
+  // Mock activities for now (no Supabase needed yet)
+  const mockActivities = [
+    { id: 1, user_name: "Sarah", action: "browsing", location: "trending posts", timestamp: new Date().toISOString() },
+    { id: 2, user_name: "Mike", action: "in village", location: "Gaming Village", timestamp: new Date().toISOString() },
+    { id: 3, user_name: "Emma", action: "posting", location: "Art Village", timestamp: new Date().toISOString() },
+    { id: 4, user_name: "Alex", action: "chatting", location: "DMs", timestamp: new Date().toISOString() },
+  ];
+
+  // Load mock activities on startup
+  useEffect(() => {
+    if (currentUser) {
+      setLiveActivities(mockActivities);
+      setFriendActivityCount(mockActivities.length);
+    }
+  }, [currentUser]);
+
+  // Function to update user activity (will be used later)
+  const updateMyActivity = async (activity) => {
+    console.log("Activity updated:", activity);
+    // We'll add Supabase here later
+  };
+
+  return (
+    <ActivityContext.Provider value={{
+      liveActivities,
+      friendActivityCount,
+      ephemeralContent,
+      updateMyActivity
+    }}>
+      {children}
+    </ActivityContext.Provider>
+  );
+};
+
+export const useActivity = () => useContext(ActivityContext);
