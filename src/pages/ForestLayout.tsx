@@ -1450,14 +1450,16 @@ const ForestLayout: React.FC = () => {
             <div style={{ ...transparentStyle, marginBottom: '16px', padding: '16px' }}>
               <h3 style={{ color: 'white', marginBottom: '12px', fontSize: '14px' }}>👥 PEOPLE</h3>
               {searchResults.users.filter(u => !u.isCurrentUser).map(user => (
-                <div key={user.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', marginBottom: '8px' }}>
-                  <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: 'linear-gradient(135deg, #667eea, #764ba2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px' }}>{user.avatar}</div>
+                <div key={user.id} onClick={() => { setViewingUserId(user.id); setActivePage('viewProfile'); }} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', marginBottom: '8px', cursor: 'pointer' }}>
+                  <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: 'linear-gradient(135deg, #667eea, #764ba2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px', overflow: 'hidden' }}>
+                    {user.avatarUrl ? <img src={user.avatarUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : user.avatar}
+                  </div>
                   <div style={{ flex: 1 }}>
                     <div><span style={{ color: 'white', fontWeight: 'bold' }}>{user.name}</span>{user.verified && <CheckCircle size={12} color="#7c9cff" />}</div>
-                    <div style={{ color: 'rgba(255,255,255,0.6)', fontSize: '11px' }}>{user.bio}</div>
+                    <div style={{ color: 'rgba(255,255,255,0.6)', fontSize: '11px' }}>{user.username} · {user.bio}</div>
                   </div>
-                  <button onClick={() => followedUsers.includes(user.id) ? unfollowUser(user.id) : followUser(user.id)} style={{ padding: '6px 16px', borderRadius: '20px', background: followedUsers.includes(user.id) ? 'rgba(100,150,255,0.3)' : 'rgba(255,255,255,0.1)', border: 'none', color: 'white', cursor: 'pointer' }}>
-                    {followedUsers.includes(user.id) ? 'Following' : 'Follow'}
+                  <button onClick={(e) => { e.stopPropagation(); (followedUsers as any[]).includes(user.id) ? unfollowUser(user.id) : followUser(user.id); }} style={{ padding: '6px 16px', borderRadius: '20px', background: (followedUsers as any[]).includes(user.id) ? 'rgba(100,150,255,0.3)' : 'rgba(255,255,255,0.1)', border: 'none', color: 'white', cursor: 'pointer' }}>
+                    {(followedUsers as any[]).includes(user.id) ? 'Following' : 'Follow'}
                   </button>
                 </div>
               ))}
@@ -1483,14 +1485,33 @@ const ForestLayout: React.FC = () => {
           )}
         </>
       ) : (
-        <div style={{ ...transparentStyle, padding: '20px', textAlign: 'center' }}>
-          <p style={{ color: 'rgba(255,255,255,0.6)' }}>Search for people, posts, or hashtags</p>
-          <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '8px', marginTop: '16px' }}>
-            {['#Nature', '#Writing', '#Stories', '#Magic', '#Adventure', '#Forest', '#Sunset', '#Travel'].map(tag => (
-              <button key={tag} onClick={() => setSearchQuery(tag)} style={{ padding: '6px 12px', borderRadius: '20px', background: 'rgba(255,255,255,0.1)', border: 'none', color: 'white', cursor: 'pointer', fontSize: '12px' }}>{tag}</button>
+        <>
+          <div style={{ ...transparentStyle, padding: '16px', marginBottom: '16px' }}>
+            <h3 style={{ color: 'white', marginBottom: '12px', fontSize: '14px' }}>👥 PEOPLE ON INKORIA</h3>
+            {allUsers.map(user => (
+              <div key={user.id} onClick={() => { setViewingUserId(user.id); setActivePage('viewProfile'); }} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', marginBottom: '8px', cursor: 'pointer' }}>
+                <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: 'linear-gradient(135deg, #667eea, #764ba2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px', overflow: 'hidden' }}>
+                  {user.avatarUrl ? <img src={user.avatarUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : user.avatar}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div><span style={{ color: 'white', fontWeight: 'bold' }}>{user.name}</span></div>
+                  <div style={{ color: 'rgba(255,255,255,0.6)', fontSize: '11px' }}>{user.username} · {user.bio}</div>
+                </div>
+                <button onClick={(e) => { e.stopPropagation(); (followedUsers as any[]).includes(user.id) ? unfollowUser(user.id) : followUser(user.id); }} style={{ padding: '6px 16px', borderRadius: '20px', background: (followedUsers as any[]).includes(user.id) ? 'rgba(100,150,255,0.3)' : 'rgba(255,255,255,0.1)', border: 'none', color: 'white', cursor: 'pointer', fontSize: '12px' }}>
+                  {(followedUsers as any[]).includes(user.id) ? 'Following' : 'Follow'}
+                </button>
+              </div>
             ))}
+            {allUsers.length === 0 && <p style={{ color: 'rgba(255,255,255,0.5)', textAlign: 'center', padding: '20px' }}>No other users yet. Invite your friends!</p>}
           </div>
-        </div>
+          <div style={{ ...transparentStyle, padding: '16px' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '8px' }}>
+              {['#Nature', '#Writing', '#Stories', '#Magic', '#Adventure', '#Forest', '#Sunset', '#Travel'].map(tag => (
+                <button key={tag} onClick={() => setSearchQuery(tag)} style={{ padding: '6px 12px', borderRadius: '20px', background: 'rgba(255,255,255,0.1)', border: 'none', color: 'white', cursor: 'pointer', fontSize: '12px' }}>{tag}</button>
+              ))}
+            </div>
+          </div>
+        </>
       )}
     </div>
   );
