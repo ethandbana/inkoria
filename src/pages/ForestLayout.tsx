@@ -696,53 +696,40 @@ const ForestLayout: React.FC = () => {
     setCommentText({ ...commentText, [postId]: '' });
   };
 
-  const handleSendMessage = (text: string) => {
-    if (text.trim()) {
-      setMessages({
-        ...messages,
-        [selectedChat]: [
-          ...(messages[selectedChat] || []),
-          {
-            id: (messages[selectedChat]?.length || 0) + 1,
-            text: text,
-            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            isOwn: true,
-            delivered: true,
-            read: false
-          }
-        ]
-      });
-      setNewMessage('');
-    }
+  const handleSendMessage = async (text: string) => {
+    if (!text.trim() || !currentUser || !selectedChat) return;
+    await supabase.from('messages').insert({
+      sender_id: currentUser.id,
+      receiver_id: selectedChat,
+      content: text
+    });
+    setNewMessage('');
   };
 
-  const sendFile = (chatName: string, type: 'audio' | 'video' | 'file') => {
+  const sendFile = async (partnerId: string, type: 'audio' | 'video' | 'file') => {
+    if (!currentUser) return;
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = type === 'audio' ? 'audio/*' : type === 'video' ? 'video/*' : '*/*';
-    input.onchange = (e: any) => {
+    input.onchange = async (e: any) => {
       const file = e.target.files[0];
       if (file) {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          setMessages({
-            ...messages,
-            [chatName]: [
-              ...(messages[chatName] || []),
-              {
-                id: (messages[chatName]?.length || 0) + 1,
-                text: '',
-                time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                isOwn: true,
-                delivered: true,
-                read: false,
-                file: {
-                  name: file.name,
-                  url: reader.result as string,
-                  type: file.type
-                }
-              }
-            ]
+        const fileName = `chat/${currentUser.id}/${Date.now()}_${file.name}`;
+        const { data: uploadData } = await supabase.storage.from('uploads').upload(fileName, file);
+        if (uploadData) {
+          const { data: urlData } = supabase.storage.from('uploads').getPublicUrl(fileName);
+          await supabase.from('messages').insert({
+            sender_id: currentUser.id,
+            receiver_id: partnerId,
+            content: `📎 ${file.name}`,
+            media_url: urlData.publicUrl,
+            media_type: type
+          });
+        }
+      }
+    };
+    input.click();
+  };
           });
         };
         reader.readAsDataURL(file);
