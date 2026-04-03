@@ -755,15 +755,9 @@ const ForestLayout: React.FC = () => {
 
   const startCall = async (type: string) => {
     if (!currentUser || !selectedChat) return;
-    // Find the conversation partner
-    const conv = conversations.find(c => c.name === selectedChat);
-    if (!conv) {
-      alert(`📞 ${type} call with ${selectedChat}...\n\nNo partner found.`);
-      return;
-    }
     try {
       const { data, error } = await supabase.functions.invoke('create-daily-room', {
-        body: { partnerId: conv.id.toString(), callType: type.toLowerCase() },
+        body: { partnerId: selectedChat, callType: type.toLowerCase() },
       });
       if (error) throw error;
       if (data?.url) {
