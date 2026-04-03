@@ -1284,7 +1284,7 @@ const ForestLayout: React.FC = () => {
       {posts.map((post) => (
         <div key={post.id} style={{ ...transparentStyle, margin: '12px', overflow: 'hidden' }}>
           <div style={{ padding: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }} onClick={() => { if (post.userId !== currentUser?.id) { setViewingUserId(post.userId); setActivePage('viewProfile'); } else { setActivePage('profile'); } }}>
               <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'linear-gradient(135deg, #667eea, #764ba2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
                 {post.userImage ? <img src={post.userImage} style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} /> : post.userAvatar}
               </div>
