@@ -1518,35 +1518,32 @@ const ForestLayout: React.FC = () => {
 
   const MessagesPage = () => (
     <div style={{ display: 'flex', flexDirection: 'column', height: isMobile ? 'calc(100vh - 70px)' : 'auto', padding: '12px' }}>
-      {!selectedChat || isMobile ? (
+      {!selectedChat ? (
         <div style={{ ...transparentStyle, padding: '16px' }}>
           <h3 style={{ color: 'white', marginBottom: '12px' }}>Messages</h3>
-          
-          {/* Create Group Button */}
           <div style={{ marginBottom: '16px' }}>
             <button onClick={() => setShowGroupChat(1)} style={{ width: '100%', padding: '12px', borderRadius: '24px', background: 'linear-gradient(135deg, #667eea, #764ba2)', border: 'none', color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center' }}>
               <Users size={18} /> Create New Group
             </button>
           </div>
-          
-          {/* Groups List */}
           {groups.map(group => (
             <div key={group.id} onClick={() => setShowGroupChat(group.id)} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', borderRadius: '16px', marginBottom: '8px', cursor: 'pointer', background: 'rgba(255,255,255,0.05)' }}>
               <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'linear-gradient(135deg, #667eea, #764ba2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px' }}>👥</div>
               <div style={{ flex: 1 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: 'white', fontWeight: group.unread ? 'bold' : 'normal' }}>{group.name}</span>
-                  <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '10px' }}>2m ago</span>
-                </div>
-                <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: '12px' }}>{group.lastMessage}</span>
+                <span style={{ color: 'white', fontWeight: group.unread ? 'bold' : 'normal' }}>{group.name}</span>
+                <div style={{ color: 'rgba(255,255,255,0.6)', fontSize: '12px' }}>{group.lastMessage}</div>
               </div>
-              {group.unread > 0 && <div style={{ width: '20px', height: '20px', background: '#7c9cff', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', color: 'white' }}>{group.unread}</div>}
             </div>
           ))}
-          
-          {/* Conversations List */}
+          {conversations.length === 0 && (
+            <div style={{ textAlign: 'center', padding: '20px', color: 'rgba(255,255,255,0.5)' }}>
+              <MessageCircle size={32} style={{ marginBottom: '8px', opacity: 0.5 }} />
+              <p>No conversations yet</p>
+              <p style={{ fontSize: '12px' }}>Search for people and start chatting!</p>
+            </div>
+          )}
           {conversations.map(conv => (
-            <div key={conv.id} onClick={() => setSelectedChat(conv.name)} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', marginBottom: '8px', cursor: 'pointer' }}>
+            <div key={conv.id} onClick={() => setSelectedChat(conv.id)} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', marginBottom: '8px', cursor: 'pointer' }}>
               <div style={{ position: 'relative' }}>
                 <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'linear-gradient(135deg, #667eea, #764ba2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>{conv.avatar}</div>
                 {conv.online && <div style={{ position: 'absolute', bottom: '2px', right: '2px', width: '10px', height: '10px', borderRadius: '50%', background: '#4ade80', border: '2px solid #000' }} />}
@@ -1554,7 +1551,6 @@ const ForestLayout: React.FC = () => {
               <div style={{ flex: 1 }}>
                 <div><span style={{ color: 'white', fontWeight: conv.unread ? 'bold' : 'normal' }}>{conv.name}</span><span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '10px', float: 'right' }}>{conv.time}</span></div>
                 <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: '12px' }}>{conv.message}</span>
-                {conv.typing && <span style={{ color: '#7c9cff', fontSize: '10px' }}>typing...</span>}
               </div>
               {conv.unread && <div style={{ width: '8px', height: '8px', background: '#7c9cff', borderRadius: '50%' }} />}
             </div>
@@ -1562,49 +1558,40 @@ const ForestLayout: React.FC = () => {
         </div>
       ) : (
         <div style={{ ...transparentStyle, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-          {/* Chat Header with Call Buttons */}
           <div style={{ padding: '16px', borderBottom: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', gap: '12px' }}>
-            {isMobile && <ArrowLeft size={20} style={{ cursor: 'pointer', color: 'white' }} onClick={() => setSelectedChat('')} />}
-            <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: 'linear-gradient(135deg, #667eea, #764ba2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{selectedChat[0]}</div>
-            <div style={{ flex: 1 }}>
-              <div style={{ color: 'white', fontWeight: 'bold' }}>{selectedChat}</div>
-              <div style={{ color: '#4ade80', fontSize: '11px' }}>Online</div>
+            <ArrowLeft size={20} style={{ cursor: 'pointer', color: 'white' }} onClick={() => setSelectedChat('')} />
+            <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: 'linear-gradient(135deg, #667eea, #764ba2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{selectedChatName?.[0] || '?'}</div>
+            <div style={{ flex: 1, cursor: 'pointer' }} onClick={() => { setViewingUserId(selectedChat); setActivePage('viewProfile'); }}>
+              <div style={{ color: 'white', fontWeight: 'bold' }}>{selectedChatName}</div>
+              <div style={{ color: selectedChatUser?.online ? '#4ade80' : 'rgba(255,255,255,0.5)', fontSize: '11px' }}>{selectedChatUser?.online ? 'Online' : 'Offline'}</div>
             </div>
             <div style={{ display: 'flex', gap: '8px' }}>
-              <button onClick={() => sendFile(selectedChat, 'audio')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '8px', borderRadius: '50%' }}><Mic size={18} color="white" /></button>
-              <button onClick={() => sendFile(selectedChat, 'video')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '8px', borderRadius: '50%' }}><Video size={18} color="white" /></button>
-              <button onClick={() => sendFile(selectedChat, 'file')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '8px', borderRadius: '50%' }}><Paperclip size={18} color="white" /></button>
-              <button onClick={() => startCall('Audio')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '8px', borderRadius: '50%' }}><Phone size={18} color="white" /></button>
-              <button onClick={() => startCall('Video')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '8px', borderRadius: '50%' }}><VideoIcon size={18} color="white" /></button>
+              <button onClick={() => startCall('Audio')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '8px' }}><Phone size={18} color="white" /></button>
+              <button onClick={() => startCall('Video')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '8px' }}><Video size={18} color="white" /></button>
             </div>
           </div>
-          
-          {/* Messages */}
           <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
-            {(messages[selectedChat] || []).map((msg) => (
-              <div key={msg.id} style={{ display: 'flex', justifyContent: msg.isOwn ? 'flex-end' : 'flex-start', marginBottom: '12px' }}>
-                <div style={{ maxWidth: '75%', background: msg.isOwn ? 'rgba(100,150,255,0.4)' : 'rgba(255,255,255,0.15)', padding: '10px 14px', borderRadius: msg.isOwn ? '18px 18px 4px 18px' : '18px 18px 18px 4px' }}>
-                  {msg.text}
-                  {msg.file && (
-                    <div style={{ marginTop: '8px', padding: '8px', background: 'rgba(255,255,255,0.1)', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      {msg.file.type.startsWith('image/') && <Image size={20} />}
-                      {msg.file.type.startsWith('video/') && <VideoIcon size={20} />}
-                      {msg.file.type.startsWith('audio/') && <Music size={20} />}
-                      <span style={{ fontSize: '12px' }}>{msg.file.name}</span>
-                      <Download size={14} style={{ cursor: 'pointer' }} onClick={() => window.open(msg.file?.url)} />
+            {chatMessages.map((msg) => (
+              <div key={msg.id} style={{ display: 'flex', justifyContent: msg.sender_id === currentUser?.id ? 'flex-end' : 'flex-start', marginBottom: '12px' }}>
+                <div style={{ maxWidth: '75%', background: msg.sender_id === currentUser?.id ? 'rgba(100,150,255,0.4)' : 'rgba(255,255,255,0.15)', padding: '10px 14px', borderRadius: msg.sender_id === currentUser?.id ? '18px 18px 4px 18px' : '18px 18px 18px 4px', color: 'white' }}>
+                  {msg.content}
+                  {msg.media_url && (
+                    <div style={{ marginTop: '8px' }}>
+                      {msg.media_type === 'image' && <img src={msg.media_url} style={{ maxWidth: '200px', borderRadius: '8px' }} />}
+                      {msg.media_type === 'video' && <video src={msg.media_url} controls style={{ maxWidth: '200px', borderRadius: '8px' }} />}
+                      {msg.media_type === 'audio' && <audio src={msg.media_url} controls />}
+                      {msg.media_type === 'file' && <a href={msg.media_url} target="_blank" style={{ color: '#a0c0ff' }}>📎 Download</a>}
                     </div>
                   )}
                   <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.5)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    {msg.time}
-                    {msg.isOwn && msg.read && <CheckCircle size={10} color="#4ade80" />}
-                    {msg.isOwn && msg.delivered && !msg.read && <CheckCircle size={10} color="rgba(255,255,255,0.5)" />}
+                    {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    {msg.sender_id === currentUser?.id && msg.is_read && <CheckCircle size={10} color="#4ade80" />}
+                    {msg.sender_id === currentUser?.id && !msg.is_read && <Check size={10} color="rgba(255,255,255,0.5)" />}
                   </div>
                 </div>
               </div>
             ))}
           </div>
-          
-          {/* Message Input */}
           <MessageInput onSendMessage={handleSendMessage} />
         </div>
       )}
