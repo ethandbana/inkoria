@@ -1330,7 +1330,7 @@ const ForestLayout: React.FC = () => {
                         onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
                         <Users size={14} /> {(followedUsers as any[]).includes(post.userId) ? 'Unfollow' : 'Follow'}
                       </button>
-                      <button onClick={() => { window.location.href = `/messages?chat=${post.userId}`; setShowPostMenu(null); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '10px 12px', background: 'transparent', border: 'none', color: 'white', cursor: 'pointer', borderRadius: '8px', fontSize: '13px' }}
+                      <button onClick={() => { setSelectedChat(post.userId); setActivePage('messages'); setShowPostMenu(null); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '10px 12px', background: 'transparent', border: 'none', color: 'white', cursor: 'pointer', borderRadius: '8px', fontSize: '13px' }}
                         onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.1)')}
                         onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
                         <Send size={14} /> Send Message
