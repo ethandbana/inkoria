@@ -730,13 +730,8 @@ const ForestLayout: React.FC = () => {
     };
     input.click();
   };
-          });
-        };
-        reader.readAsDataURL(file);
-      }
-    };
-    input.click();
-  };
+
+
 
   const [activeCall, setActiveCall] = useState<{ url: string; isAudioOnly: boolean } | null>(null);
 
