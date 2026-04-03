@@ -384,11 +384,68 @@ const ForestLayout: React.FC = () => {
     loadAllUsers();
   }, [currentUser?.id, followedUsers]);
 
-  const conversations = [
-    { id: 1, name: 'Sarah Meyer', message: 'Hey are you writing tonight?', time: '2m', unread: true, avatar: 'S', online: true, typing: false },
-    { id: 2, name: 'ElaraWrites', message: 'I loved your new story!', time: '3h', unread: true, avatar: 'E', online: true, typing: false },
-    { id: 3, name: 'AlexKnight', message: 'That was an amazing twist!', time: '5h', unread: false, avatar: 'A', online: false, typing: false },
-  ];
+  // ============ LOAD REAL CONVERSATIONS ============
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    const loadConversations = async () => {
+      const { data: msgs } = await supabase
+        .from('messages')
+        .select('*')
+        .or(`sender_id.eq.${currentUser.id},receiver_id.eq.${currentUser.id}`)
+        .order('created_at', { ascending: false });
+      if (!msgs) { setRealConversations([]); return; }
+      const convMap = new Map<string, any>();
+      msgs.forEach(m => {
+        const partnerId = m.sender_id === currentUser.id ? m.receiver_id : m.sender_id;
+        if (!convMap.has(partnerId)) {
+          convMap.set(partnerId, { partnerId, lastMessage: m.content, lastTime: m.created_at, unreadCount: 0 });
+        }
+        if (m.receiver_id === currentUser.id && !m.is_read) {
+          convMap.get(partnerId).unreadCount++;
+        }
+      });
+      const partnerIds = [...convMap.keys()];
+      if (partnerIds.length === 0) { setRealConversations([]); return; }
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, username, display_name, avatar_url, is_online')
+        .in('id', partnerIds);
+      const profileMap = new Map(profiles?.map(p => [p.id, p]) || []);
+      setRealConversations([...convMap.values()].map(c => {
+        const p = profileMap.get(c.partnerId);
+        return { id: c.partnerId, name: p?.display_name || p?.username || 'User', avatar: p?.avatar_url?.[0]?.toUpperCase() || '👤', avatarUrl: p?.avatar_url, message: c.lastMessage, time: getTimeAgo(c.lastTime), unread: c.unreadCount > 0, online: p?.is_online || false, typing: false };
+      }));
+    };
+    loadConversations();
+    const channel = supabase.channel('forest-msgs-rt')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
+        const msg = payload.new as any;
+        if (msg.sender_id === currentUser.id || msg.receiver_id === currentUser.id) {
+          loadConversations();
+          if (selectedChat && (msg.sender_id === selectedChat || msg.receiver_id === selectedChat)) {
+            setChatMessages(prev => [...prev, msg]);
+          }
+        }
+      })
+      .subscribe();
+    return () => { channel.unsubscribe(); };
+  }, [currentUser?.id]);
+
+  useEffect(() => {
+    if (!currentUser?.id || !selectedChat) { setChatMessages([]); return; }
+    const loadChat = async () => {
+      const { data } = await supabase.from('messages').select('*')
+        .or(`and(sender_id.eq.${currentUser.id},receiver_id.eq.${selectedChat}),and(sender_id.eq.${selectedChat},receiver_id.eq.${currentUser.id})`)
+        .order('created_at', { ascending: true });
+      setChatMessages(data || []);
+      await supabase.from('messages').update({ is_read: true }).eq('sender_id', selectedChat).eq('receiver_id', currentUser.id).eq('is_read', false);
+    };
+    loadChat();
+  }, [selectedChat, currentUser?.id]);
+
+  const conversations = realConversations;
+  const selectedChatUser = realConversations.find((c: any) => c.id === selectedChat) || allUsers.find((u: any) => u.id === selectedChat);
+  const selectedChatName = selectedChatUser?.name || '';
 
   const displayStories = [
     { username: 'Your Story', avatar: '🌙', isAdd: true, viewed: false },
