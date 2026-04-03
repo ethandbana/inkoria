@@ -1858,49 +1858,24 @@ const ForestLayout: React.FC = () => {
         <h3 style={{ color: 'white', marginBottom: '12px' }}>Messages</h3>
         <div style={{ position: 'relative' }}>
           <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'rgba(255,255,255,0.5)' }} />
-          <input 
-            type="text" 
-            placeholder="Search conversations..." 
-            style={{ 
-              width: '100%', 
-              background: 'rgba(255,255,255,0.1)', 
-              border: 'none', 
-              borderRadius: '24px', 
-              padding: '8px 12px 8px 36px', 
-              color: 'white', 
-              outline: 'none' 
-            }} 
-          />
+          <input type="text" placeholder="Search conversations..." style={{ width: '100%', background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '24px', padding: '8px 12px 8px 36px', color: 'white', outline: 'none' }} />
         </div>
       </div>
       
       <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
+        {conversations.length === 0 && (
+          <div style={{ textAlign: 'center', padding: '20px', color: 'rgba(255,255,255,0.5)' }}>
+            <p style={{ fontSize: '12px' }}>No conversations yet</p>
+          </div>
+        )}
         {conversations.map((conv) => (
           <div 
             key={conv.id} 
-            onClick={() => { setSelectedChat(conv.name); setActivePage('messages'); }} 
-            style={{ 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: '12px', 
-              padding: '10px', 
-              borderRadius: '12px', 
-              cursor: 'pointer', 
-              background: selectedChat === conv.name ? 'rgba(100,150,255,0.2)' : 'transparent', 
-              marginBottom: '8px' 
-            }}
+            onClick={() => { setSelectedChat(conv.id); setActivePage('messages'); }} 
+            style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px', borderRadius: '12px', cursor: 'pointer', background: selectedChat === conv.id ? 'rgba(100,150,255,0.2)' : 'transparent', marginBottom: '8px' }}
           >
             <div style={{ position: 'relative' }}>
-              <div style={{ 
-                width: '44px', 
-                height: '44px', 
-                borderRadius: '50%', 
-                background: 'linear-gradient(135deg, #667eea, #764ba2)', 
-                display: 'flex', 
-                alignItems: 'center', 
-                justifyContent: 'center', 
-                color: 'white' 
-              }}>{conv.avatar}</div>
+              <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: 'linear-gradient(135deg, #667eea, #764ba2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>{conv.avatar}</div>
               {conv.online && <div style={{ position: 'absolute', bottom: '2px', right: '2px', width: '10px', height: '10px', borderRadius: '50%', background: '#4ade80', border: '2px solid #000' }} />}
             </div>
             <div style={{ flex: 1 }}>
@@ -1918,42 +1893,22 @@ const ForestLayout: React.FC = () => {
       {selectedChat && activePage === 'messages' && (
         <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', padding: '12px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <div style={{ 
-                width: '36px', 
-                height: '36px', 
-                borderRadius: '50%', 
-                background: 'linear-gradient(135deg, #667eea, #764ba2)', 
-                display: 'flex', 
-                alignItems: 'center', 
-                justifyContent: 'center', 
-                color: 'white' 
-              }}>{selectedChat[0]}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }} onClick={() => { setViewingUserId(selectedChat); setActivePage('viewProfile'); }}>
+              <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'linear-gradient(135deg, #667eea, #764ba2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>{selectedChatName?.[0] || '?'}</div>
               <div>
-                <div style={{ color: 'white', fontWeight: 'bold', fontSize: '13px' }}>{selectedChat}</div>
-                <div style={{ color: '#4ade80', fontSize: '9px' }}>Online</div>
+                <div style={{ color: 'white', fontWeight: 'bold', fontSize: '13px' }}>{selectedChatName}</div>
+                <div style={{ color: selectedChatUser?.online ? '#4ade80' : 'rgba(255,255,255,0.5)', fontSize: '9px' }}>{selectedChatUser?.online ? 'Online' : 'Offline'}</div>
               </div>
             </div>
             <div style={{ display: 'flex', gap: '8px' }}>
-              <button onClick={() => sendFile(selectedChat, 'audio')} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><Mic size={14} color="white" /></button>
-              <button onClick={() => sendFile(selectedChat, 'video')} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><Video size={14} color="white" /></button>
-              <button onClick={() => sendFile(selectedChat, 'file')} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><Paperclip size={14} color="white" /></button>
               <button onClick={() => startCall('Audio')} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><Phone size={14} color="white" /></button>
-              <button onClick={() => startCall('Video')} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><VideoIcon size={14} color="white" /></button>
+              <button onClick={() => startCall('Video')} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><Video size={14} color="white" /></button>
             </div>
           </div>
-          
           <div style={{ maxHeight: '120px', overflowY: 'auto', marginBottom: '10px' }}>
-            {(messages[selectedChat] || []).slice(-3).map((msg) => (
-              <div key={msg.id} style={{ display: 'flex', justifyContent: msg.isOwn ? 'flex-end' : 'flex-start', marginBottom: '6px' }}>
-                <div style={{ 
-                  maxWidth: '85%', 
-                  background: msg.isOwn ? 'rgba(100,150,255,0.3)' : 'rgba(255,255,255,0.1)', 
-                  padding: '6px 10px', 
-                  borderRadius: '12px', 
-                  fontSize: '12px', 
-                  color: 'white' 
-                }}>{msg.text}</div>
+            {chatMessages.slice(-3).map((msg) => (
+              <div key={msg.id} style={{ display: 'flex', justifyContent: msg.sender_id === currentUser?.id ? 'flex-end' : 'flex-start', marginBottom: '6px' }}>
+                <div style={{ maxWidth: '85%', background: msg.sender_id === currentUser?.id ? 'rgba(100,150,255,0.3)' : 'rgba(255,255,255,0.1)', padding: '6px 10px', borderRadius: '12px', fontSize: '12px', color: 'white' }}>{msg.content}</div>
               </div>
             ))}
           </div>
