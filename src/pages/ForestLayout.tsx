@@ -73,21 +73,14 @@ const ForestLayout: React.FC = () => {
   ]);
 
   // ============ CHAT STATE ============
-  const [messages, setMessages] = useState<{[key: string]: Array<{id: number, text: string, time: string, isOwn: boolean, delivered?: boolean, read?: boolean, audio?: string, video?: string, file?: {name: string, url: string, type: string}}>}>({
-    'Sarah Meyer': [
-      { id: 1, text: 'Hey are you writing tonight?', time: '2:30 PM', isOwn: false, delivered: true, read: true },
-      { id: 2, text: 'Yes! Working on the new chapter', time: '2:31 PM', isOwn: true, delivered: true, read: true },
-      { id: 3, text: 'Can\'t wait to read it!', time: '2:32 PM', isOwn: false, delivered: true, read: false },
-    ],
-    'ElaraWrites': [
-      { id: 1, text: 'I loved your new story!', time: '3:00 PM', isOwn: false, delivered: true, read: true },
-    ],
-  });
+  const [chatMessages, setChatMessages] = useState<any[]>([]);
   
   // ============ OTHER STATE ============
   const [newMessage, setNewMessage] = useState('');
-  const [selectedChat, setSelectedChat] = useState('Sarah Meyer');
+  const [selectedChat, setSelectedChat] = useState('');
   const [activePage, setActivePage] = useState('home');
+  const [viewingUserId, setViewingUserId] = useState<string | null>(null);
+  const [realConversations, setRealConversations] = useState<any[]>([]);
   const [showSettings, setShowSettings] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(true);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -391,11 +384,68 @@ const ForestLayout: React.FC = () => {
     loadAllUsers();
   }, [currentUser?.id, followedUsers]);
 
-  const conversations = [
-    { id: 1, name: 'Sarah Meyer', message: 'Hey are you writing tonight?', time: '2m', unread: true, avatar: 'S', online: true, typing: false },
-    { id: 2, name: 'ElaraWrites', message: 'I loved your new story!', time: '3h', unread: true, avatar: 'E', online: true, typing: false },
-    { id: 3, name: 'AlexKnight', message: 'That was an amazing twist!', time: '5h', unread: false, avatar: 'A', online: false, typing: false },
-  ];
+  // ============ LOAD REAL CONVERSATIONS ============
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    const loadConversations = async () => {
+      const { data: msgs } = await supabase
+        .from('messages')
+        .select('*')
+        .or(`sender_id.eq.${currentUser.id},receiver_id.eq.${currentUser.id}`)
+        .order('created_at', { ascending: false });
+      if (!msgs) { setRealConversations([]); return; }
+      const convMap = new Map<string, any>();
+      msgs.forEach(m => {
+        const partnerId = m.sender_id === currentUser.id ? m.receiver_id : m.sender_id;
+        if (!convMap.has(partnerId)) {
+          convMap.set(partnerId, { partnerId, lastMessage: m.content, lastTime: m.created_at, unreadCount: 0 });
+        }
+        if (m.receiver_id === currentUser.id && !m.is_read) {
+          convMap.get(partnerId).unreadCount++;
+        }
+      });
+      const partnerIds = [...convMap.keys()];
+      if (partnerIds.length === 0) { setRealConversations([]); return; }
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, username, display_name, avatar_url, is_online')
+        .in('id', partnerIds);
+      const profileMap = new Map(profiles?.map(p => [p.id, p]) || []);
+      setRealConversations([...convMap.values()].map(c => {
+        const p = profileMap.get(c.partnerId);
+        return { id: c.partnerId, name: p?.display_name || p?.username || 'User', avatar: p?.avatar_url?.[0]?.toUpperCase() || '👤', avatarUrl: p?.avatar_url, message: c.lastMessage, time: getTimeAgo(c.lastTime), unread: c.unreadCount > 0, online: p?.is_online || false, typing: false };
+      }));
+    };
+    loadConversations();
+    const channel = supabase.channel('forest-msgs-rt')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
+        const msg = payload.new as any;
+        if (msg.sender_id === currentUser.id || msg.receiver_id === currentUser.id) {
+          loadConversations();
+          if (selectedChat && (msg.sender_id === selectedChat || msg.receiver_id === selectedChat)) {
+            setChatMessages(prev => [...prev, msg]);
+          }
+        }
+      })
+      .subscribe();
+    return () => { channel.unsubscribe(); };
+  }, [currentUser?.id]);
+
+  useEffect(() => {
+    if (!currentUser?.id || !selectedChat) { setChatMessages([]); return; }
+    const loadChat = async () => {
+      const { data } = await supabase.from('messages').select('*')
+        .or(`and(sender_id.eq.${currentUser.id},receiver_id.eq.${selectedChat}),and(sender_id.eq.${selectedChat},receiver_id.eq.${currentUser.id})`)
+        .order('created_at', { ascending: true });
+      setChatMessages(data || []);
+      await supabase.from('messages').update({ is_read: true }).eq('sender_id', selectedChat).eq('receiver_id', currentUser.id).eq('is_read', false);
+    };
+    loadChat();
+  }, [selectedChat, currentUser?.id]);
+
+  const conversations = realConversations;
+  const selectedChatUser = realConversations.find((c: any) => c.id === selectedChat) || allUsers.find((u: any) => u.id === selectedChat);
+  const selectedChatName = selectedChatUser?.name || '';
 
   const displayStories = [
     { username: 'Your Story', avatar: '🌙', isAdd: true, viewed: false },
@@ -646,74 +696,50 @@ const ForestLayout: React.FC = () => {
     setCommentText({ ...commentText, [postId]: '' });
   };
 
-  const handleSendMessage = (text: string) => {
-    if (text.trim()) {
-      setMessages({
-        ...messages,
-        [selectedChat]: [
-          ...(messages[selectedChat] || []),
-          {
-            id: (messages[selectedChat]?.length || 0) + 1,
-            text: text,
-            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            isOwn: true,
-            delivered: true,
-            read: false
-          }
-        ]
-      });
-      setNewMessage('');
-    }
+  const handleSendMessage = async (text: string) => {
+    if (!text.trim() || !currentUser || !selectedChat) return;
+    await supabase.from('messages').insert({
+      sender_id: currentUser.id,
+      receiver_id: selectedChat,
+      content: text
+    });
+    setNewMessage('');
   };
 
-  const sendFile = (chatName: string, type: 'audio' | 'video' | 'file') => {
+  const sendFile = async (partnerId: string, type: 'audio' | 'video' | 'file') => {
+    if (!currentUser) return;
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = type === 'audio' ? 'audio/*' : type === 'video' ? 'video/*' : '*/*';
-    input.onchange = (e: any) => {
+    input.onchange = async (e: any) => {
       const file = e.target.files[0];
       if (file) {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          setMessages({
-            ...messages,
-            [chatName]: [
-              ...(messages[chatName] || []),
-              {
-                id: (messages[chatName]?.length || 0) + 1,
-                text: '',
-                time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                isOwn: true,
-                delivered: true,
-                read: false,
-                file: {
-                  name: file.name,
-                  url: reader.result as string,
-                  type: file.type
-                }
-              }
-            ]
+        const fileName = `chat/${currentUser.id}/${Date.now()}_${file.name}`;
+        const { data: uploadData } = await supabase.storage.from('uploads').upload(fileName, file);
+        if (uploadData) {
+          const { data: urlData } = supabase.storage.from('uploads').getPublicUrl(fileName);
+          await supabase.from('messages').insert({
+            sender_id: currentUser.id,
+            receiver_id: partnerId,
+            content: `📎 ${file.name}`,
+            media_url: urlData.publicUrl,
+            media_type: type
           });
-        };
-        reader.readAsDataURL(file);
+        }
       }
     };
     input.click();
   };
 
+
+
   const [activeCall, setActiveCall] = useState<{ url: string; isAudioOnly: boolean } | null>(null);
 
   const startCall = async (type: string) => {
     if (!currentUser || !selectedChat) return;
-    // Find the conversation partner
-    const conv = conversations.find(c => c.name === selectedChat);
-    if (!conv) {
-      alert(`📞 ${type} call with ${selectedChat}...\n\nNo partner found.`);
-      return;
-    }
     try {
       const { data, error } = await supabase.functions.invoke('create-daily-room', {
-        body: { partnerId: conv.id.toString(), callType: type.toLowerCase() },
+        body: { partnerId: selectedChat, callType: type.toLowerCase() },
       });
       if (error) throw error;
       if (data?.url) {
@@ -1240,7 +1266,7 @@ const ForestLayout: React.FC = () => {
       {posts.map((post) => (
         <div key={post.id} style={{ ...transparentStyle, margin: '12px', overflow: 'hidden' }}>
           <div style={{ padding: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }} onClick={() => { if (post.userId !== currentUser?.id) { setViewingUserId(post.userId); setActivePage('viewProfile'); } else { setActivePage('profile'); } }}>
               <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'linear-gradient(135deg, #667eea, #764ba2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
                 {post.userImage ? <img src={post.userImage} style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} /> : post.userAvatar}
               </div>
@@ -1286,7 +1312,7 @@ const ForestLayout: React.FC = () => {
                         onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
                         <Users size={14} /> {(followedUsers as any[]).includes(post.userId) ? 'Unfollow' : 'Follow'}
                       </button>
-                      <button onClick={() => { window.location.href = `/messages?chat=${post.userId}`; setShowPostMenu(null); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '10px 12px', background: 'transparent', border: 'none', color: 'white', cursor: 'pointer', borderRadius: '8px', fontSize: '13px' }}
+                      <button onClick={() => { setSelectedChat(post.userId); setActivePage('messages'); setShowPostMenu(null); }} style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%', padding: '10px 12px', background: 'transparent', border: 'none', color: 'white', cursor: 'pointer', borderRadius: '8px', fontSize: '13px' }}
                         onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.1)')}
                         onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
                         <Send size={14} /> Send Message
@@ -1406,14 +1432,16 @@ const ForestLayout: React.FC = () => {
             <div style={{ ...transparentStyle, marginBottom: '16px', padding: '16px' }}>
               <h3 style={{ color: 'white', marginBottom: '12px', fontSize: '14px' }}>👥 PEOPLE</h3>
               {searchResults.users.filter(u => !u.isCurrentUser).map(user => (
-                <div key={user.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', marginBottom: '8px' }}>
-                  <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: 'linear-gradient(135deg, #667eea, #764ba2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px' }}>{user.avatar}</div>
+                <div key={user.id} onClick={() => { setViewingUserId(user.id); setActivePage('viewProfile'); }} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', marginBottom: '8px', cursor: 'pointer' }}>
+                  <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: 'linear-gradient(135deg, #667eea, #764ba2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px', overflow: 'hidden' }}>
+                    {user.avatarUrl ? <img src={user.avatarUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : user.avatar}
+                  </div>
                   <div style={{ flex: 1 }}>
                     <div><span style={{ color: 'white', fontWeight: 'bold' }}>{user.name}</span>{user.verified && <CheckCircle size={12} color="#7c9cff" />}</div>
-                    <div style={{ color: 'rgba(255,255,255,0.6)', fontSize: '11px' }}>{user.bio}</div>
+                    <div style={{ color: 'rgba(255,255,255,0.6)', fontSize: '11px' }}>{user.username} · {user.bio}</div>
                   </div>
-                  <button onClick={() => followedUsers.includes(user.id) ? unfollowUser(user.id) : followUser(user.id)} style={{ padding: '6px 16px', borderRadius: '20px', background: followedUsers.includes(user.id) ? 'rgba(100,150,255,0.3)' : 'rgba(255,255,255,0.1)', border: 'none', color: 'white', cursor: 'pointer' }}>
-                    {followedUsers.includes(user.id) ? 'Following' : 'Follow'}
+                  <button onClick={(e) => { e.stopPropagation(); (followedUsers as any[]).includes(user.id) ? unfollowUser(user.id) : followUser(user.id); }} style={{ padding: '6px 16px', borderRadius: '20px', background: (followedUsers as any[]).includes(user.id) ? 'rgba(100,150,255,0.3)' : 'rgba(255,255,255,0.1)', border: 'none', color: 'white', cursor: 'pointer' }}>
+                    {(followedUsers as any[]).includes(user.id) ? 'Following' : 'Follow'}
                   </button>
                 </div>
               ))}
@@ -1439,49 +1467,65 @@ const ForestLayout: React.FC = () => {
           )}
         </>
       ) : (
-        <div style={{ ...transparentStyle, padding: '20px', textAlign: 'center' }}>
-          <p style={{ color: 'rgba(255,255,255,0.6)' }}>Search for people, posts, or hashtags</p>
-          <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '8px', marginTop: '16px' }}>
-            {['#Nature', '#Writing', '#Stories', '#Magic', '#Adventure', '#Forest', '#Sunset', '#Travel'].map(tag => (
-              <button key={tag} onClick={() => setSearchQuery(tag)} style={{ padding: '6px 12px', borderRadius: '20px', background: 'rgba(255,255,255,0.1)', border: 'none', color: 'white', cursor: 'pointer', fontSize: '12px' }}>{tag}</button>
+        <>
+          <div style={{ ...transparentStyle, padding: '16px', marginBottom: '16px' }}>
+            <h3 style={{ color: 'white', marginBottom: '12px', fontSize: '14px' }}>👥 PEOPLE ON INKORIA</h3>
+            {allUsers.map(user => (
+              <div key={user.id} onClick={() => { setViewingUserId(user.id); setActivePage('viewProfile'); }} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', marginBottom: '8px', cursor: 'pointer' }}>
+                <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: 'linear-gradient(135deg, #667eea, #764ba2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px', overflow: 'hidden' }}>
+                  {user.avatarUrl ? <img src={user.avatarUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : user.avatar}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div><span style={{ color: 'white', fontWeight: 'bold' }}>{user.name}</span></div>
+                  <div style={{ color: 'rgba(255,255,255,0.6)', fontSize: '11px' }}>{user.username} · {user.bio}</div>
+                </div>
+                <button onClick={(e) => { e.stopPropagation(); (followedUsers as any[]).includes(user.id) ? unfollowUser(user.id) : followUser(user.id); }} style={{ padding: '6px 16px', borderRadius: '20px', background: (followedUsers as any[]).includes(user.id) ? 'rgba(100,150,255,0.3)' : 'rgba(255,255,255,0.1)', border: 'none', color: 'white', cursor: 'pointer', fontSize: '12px' }}>
+                  {(followedUsers as any[]).includes(user.id) ? 'Following' : 'Follow'}
+                </button>
+              </div>
             ))}
+            {allUsers.length === 0 && <p style={{ color: 'rgba(255,255,255,0.5)', textAlign: 'center', padding: '20px' }}>No other users yet. Invite your friends!</p>}
           </div>
-        </div>
+          <div style={{ ...transparentStyle, padding: '16px' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '8px' }}>
+              {['#Nature', '#Writing', '#Stories', '#Magic', '#Adventure', '#Forest', '#Sunset', '#Travel'].map(tag => (
+                <button key={tag} onClick={() => setSearchQuery(tag)} style={{ padding: '6px 12px', borderRadius: '20px', background: 'rgba(255,255,255,0.1)', border: 'none', color: 'white', cursor: 'pointer', fontSize: '12px' }}>{tag}</button>
+              ))}
+            </div>
+          </div>
+        </>
       )}
     </div>
   );
 
   const MessagesPage = () => (
     <div style={{ display: 'flex', flexDirection: 'column', height: isMobile ? 'calc(100vh - 70px)' : 'auto', padding: '12px' }}>
-      {!selectedChat || isMobile ? (
+      {!selectedChat ? (
         <div style={{ ...transparentStyle, padding: '16px' }}>
           <h3 style={{ color: 'white', marginBottom: '12px' }}>Messages</h3>
-          
-          {/* Create Group Button */}
           <div style={{ marginBottom: '16px' }}>
             <button onClick={() => setShowGroupChat(1)} style={{ width: '100%', padding: '12px', borderRadius: '24px', background: 'linear-gradient(135deg, #667eea, #764ba2)', border: 'none', color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center' }}>
               <Users size={18} /> Create New Group
             </button>
           </div>
-          
-          {/* Groups List */}
           {groups.map(group => (
             <div key={group.id} onClick={() => setShowGroupChat(group.id)} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', borderRadius: '16px', marginBottom: '8px', cursor: 'pointer', background: 'rgba(255,255,255,0.05)' }}>
               <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'linear-gradient(135deg, #667eea, #764ba2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px' }}>👥</div>
               <div style={{ flex: 1 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: 'white', fontWeight: group.unread ? 'bold' : 'normal' }}>{group.name}</span>
-                  <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '10px' }}>2m ago</span>
-                </div>
-                <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: '12px' }}>{group.lastMessage}</span>
+                <span style={{ color: 'white', fontWeight: group.unread ? 'bold' : 'normal' }}>{group.name}</span>
+                <div style={{ color: 'rgba(255,255,255,0.6)', fontSize: '12px' }}>{group.lastMessage}</div>
               </div>
-              {group.unread > 0 && <div style={{ width: '20px', height: '20px', background: '#7c9cff', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', color: 'white' }}>{group.unread}</div>}
             </div>
           ))}
-          
-          {/* Conversations List */}
+          {conversations.length === 0 && (
+            <div style={{ textAlign: 'center', padding: '20px', color: 'rgba(255,255,255,0.5)' }}>
+              <MessageCircle size={32} style={{ marginBottom: '8px', opacity: 0.5 }} />
+              <p>No conversations yet</p>
+              <p style={{ fontSize: '12px' }}>Search for people and start chatting!</p>
+            </div>
+          )}
           {conversations.map(conv => (
-            <div key={conv.id} onClick={() => setSelectedChat(conv.name)} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', marginBottom: '8px', cursor: 'pointer' }}>
+            <div key={conv.id} onClick={() => setSelectedChat(conv.id)} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', marginBottom: '8px', cursor: 'pointer' }}>
               <div style={{ position: 'relative' }}>
                 <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'linear-gradient(135deg, #667eea, #764ba2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>{conv.avatar}</div>
                 {conv.online && <div style={{ position: 'absolute', bottom: '2px', right: '2px', width: '10px', height: '10px', borderRadius: '50%', background: '#4ade80', border: '2px solid #000' }} />}
@@ -1489,7 +1533,6 @@ const ForestLayout: React.FC = () => {
               <div style={{ flex: 1 }}>
                 <div><span style={{ color: 'white', fontWeight: conv.unread ? 'bold' : 'normal' }}>{conv.name}</span><span style={{ color: 'rgba(255,255,255,0.5)', fontSize: '10px', float: 'right' }}>{conv.time}</span></div>
                 <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: '12px' }}>{conv.message}</span>
-                {conv.typing && <span style={{ color: '#7c9cff', fontSize: '10px' }}>typing...</span>}
               </div>
               {conv.unread && <div style={{ width: '8px', height: '8px', background: '#7c9cff', borderRadius: '50%' }} />}
             </div>
@@ -1497,49 +1540,40 @@ const ForestLayout: React.FC = () => {
         </div>
       ) : (
         <div style={{ ...transparentStyle, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-          {/* Chat Header with Call Buttons */}
           <div style={{ padding: '16px', borderBottom: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', gap: '12px' }}>
-            {isMobile && <ArrowLeft size={20} style={{ cursor: 'pointer', color: 'white' }} onClick={() => setSelectedChat('')} />}
-            <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: 'linear-gradient(135deg, #667eea, #764ba2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{selectedChat[0]}</div>
-            <div style={{ flex: 1 }}>
-              <div style={{ color: 'white', fontWeight: 'bold' }}>{selectedChat}</div>
-              <div style={{ color: '#4ade80', fontSize: '11px' }}>Online</div>
+            <ArrowLeft size={20} style={{ cursor: 'pointer', color: 'white' }} onClick={() => setSelectedChat('')} />
+            <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: 'linear-gradient(135deg, #667eea, #764ba2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{selectedChatName?.[0] || '?'}</div>
+            <div style={{ flex: 1, cursor: 'pointer' }} onClick={() => { setViewingUserId(selectedChat); setActivePage('viewProfile'); }}>
+              <div style={{ color: 'white', fontWeight: 'bold' }}>{selectedChatName}</div>
+              <div style={{ color: selectedChatUser?.online ? '#4ade80' : 'rgba(255,255,255,0.5)', fontSize: '11px' }}>{selectedChatUser?.online ? 'Online' : 'Offline'}</div>
             </div>
             <div style={{ display: 'flex', gap: '8px' }}>
-              <button onClick={() => sendFile(selectedChat, 'audio')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '8px', borderRadius: '50%' }}><Mic size={18} color="white" /></button>
-              <button onClick={() => sendFile(selectedChat, 'video')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '8px', borderRadius: '50%' }}><Video size={18} color="white" /></button>
-              <button onClick={() => sendFile(selectedChat, 'file')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '8px', borderRadius: '50%' }}><Paperclip size={18} color="white" /></button>
-              <button onClick={() => startCall('Audio')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '8px', borderRadius: '50%' }}><Phone size={18} color="white" /></button>
-              <button onClick={() => startCall('Video')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '8px', borderRadius: '50%' }}><VideoIcon size={18} color="white" /></button>
+              <button onClick={() => startCall('Audio')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '8px' }}><Phone size={18} color="white" /></button>
+              <button onClick={() => startCall('Video')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '8px' }}><Video size={18} color="white" /></button>
             </div>
           </div>
-          
-          {/* Messages */}
           <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
-            {(messages[selectedChat] || []).map((msg) => (
-              <div key={msg.id} style={{ display: 'flex', justifyContent: msg.isOwn ? 'flex-end' : 'flex-start', marginBottom: '12px' }}>
-                <div style={{ maxWidth: '75%', background: msg.isOwn ? 'rgba(100,150,255,0.4)' : 'rgba(255,255,255,0.15)', padding: '10px 14px', borderRadius: msg.isOwn ? '18px 18px 4px 18px' : '18px 18px 18px 4px' }}>
-                  {msg.text}
-                  {msg.file && (
-                    <div style={{ marginTop: '8px', padding: '8px', background: 'rgba(255,255,255,0.1)', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      {msg.file.type.startsWith('image/') && <Image size={20} />}
-                      {msg.file.type.startsWith('video/') && <VideoIcon size={20} />}
-                      {msg.file.type.startsWith('audio/') && <Music size={20} />}
-                      <span style={{ fontSize: '12px' }}>{msg.file.name}</span>
-                      <Download size={14} style={{ cursor: 'pointer' }} onClick={() => window.open(msg.file?.url)} />
+            {chatMessages.map((msg) => (
+              <div key={msg.id} style={{ display: 'flex', justifyContent: msg.sender_id === currentUser?.id ? 'flex-end' : 'flex-start', marginBottom: '12px' }}>
+                <div style={{ maxWidth: '75%', background: msg.sender_id === currentUser?.id ? 'rgba(100,150,255,0.4)' : 'rgba(255,255,255,0.15)', padding: '10px 14px', borderRadius: msg.sender_id === currentUser?.id ? '18px 18px 4px 18px' : '18px 18px 18px 4px', color: 'white' }}>
+                  {msg.content}
+                  {msg.media_url && (
+                    <div style={{ marginTop: '8px' }}>
+                      {msg.media_type === 'image' && <img src={msg.media_url} style={{ maxWidth: '200px', borderRadius: '8px' }} />}
+                      {msg.media_type === 'video' && <video src={msg.media_url} controls style={{ maxWidth: '200px', borderRadius: '8px' }} />}
+                      {msg.media_type === 'audio' && <audio src={msg.media_url} controls />}
+                      {msg.media_type === 'file' && <a href={msg.media_url} target="_blank" style={{ color: '#a0c0ff' }}>📎 Download</a>}
                     </div>
                   )}
                   <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.5)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    {msg.time}
-                    {msg.isOwn && msg.read && <CheckCircle size={10} color="#4ade80" />}
-                    {msg.isOwn && msg.delivered && !msg.read && <CheckCircle size={10} color="rgba(255,255,255,0.5)" />}
+                    {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    {msg.sender_id === currentUser?.id && msg.is_read && <CheckCircle size={10} color="#4ade80" />}
+                    {msg.sender_id === currentUser?.id && !msg.is_read && <Check size={10} color="rgba(255,255,255,0.5)" />}
                   </div>
                 </div>
               </div>
             ))}
           </div>
-          
-          {/* Message Input */}
           <MessageInput onSendMessage={handleSendMessage} />
         </div>
       )}
@@ -1806,49 +1840,24 @@ const ForestLayout: React.FC = () => {
         <h3 style={{ color: 'white', marginBottom: '12px' }}>Messages</h3>
         <div style={{ position: 'relative' }}>
           <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'rgba(255,255,255,0.5)' }} />
-          <input 
-            type="text" 
-            placeholder="Search conversations..." 
-            style={{ 
-              width: '100%', 
-              background: 'rgba(255,255,255,0.1)', 
-              border: 'none', 
-              borderRadius: '24px', 
-              padding: '8px 12px 8px 36px', 
-              color: 'white', 
-              outline: 'none' 
-            }} 
-          />
+          <input type="text" placeholder="Search conversations..." style={{ width: '100%', background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '24px', padding: '8px 12px 8px 36px', color: 'white', outline: 'none' }} />
         </div>
       </div>
       
       <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
+        {conversations.length === 0 && (
+          <div style={{ textAlign: 'center', padding: '20px', color: 'rgba(255,255,255,0.5)' }}>
+            <p style={{ fontSize: '12px' }}>No conversations yet</p>
+          </div>
+        )}
         {conversations.map((conv) => (
           <div 
             key={conv.id} 
-            onClick={() => { setSelectedChat(conv.name); setActivePage('messages'); }} 
-            style={{ 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: '12px', 
-              padding: '10px', 
-              borderRadius: '12px', 
-              cursor: 'pointer', 
-              background: selectedChat === conv.name ? 'rgba(100,150,255,0.2)' : 'transparent', 
-              marginBottom: '8px' 
-            }}
+            onClick={() => { setSelectedChat(conv.id); setActivePage('messages'); }} 
+            style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px', borderRadius: '12px', cursor: 'pointer', background: selectedChat === conv.id ? 'rgba(100,150,255,0.2)' : 'transparent', marginBottom: '8px' }}
           >
             <div style={{ position: 'relative' }}>
-              <div style={{ 
-                width: '44px', 
-                height: '44px', 
-                borderRadius: '50%', 
-                background: 'linear-gradient(135deg, #667eea, #764ba2)', 
-                display: 'flex', 
-                alignItems: 'center', 
-                justifyContent: 'center', 
-                color: 'white' 
-              }}>{conv.avatar}</div>
+              <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: 'linear-gradient(135deg, #667eea, #764ba2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>{conv.avatar}</div>
               {conv.online && <div style={{ position: 'absolute', bottom: '2px', right: '2px', width: '10px', height: '10px', borderRadius: '50%', background: '#4ade80', border: '2px solid #000' }} />}
             </div>
             <div style={{ flex: 1 }}>
@@ -1866,42 +1875,22 @@ const ForestLayout: React.FC = () => {
       {selectedChat && activePage === 'messages' && (
         <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', padding: '12px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <div style={{ 
-                width: '36px', 
-                height: '36px', 
-                borderRadius: '50%', 
-                background: 'linear-gradient(135deg, #667eea, #764ba2)', 
-                display: 'flex', 
-                alignItems: 'center', 
-                justifyContent: 'center', 
-                color: 'white' 
-              }}>{selectedChat[0]}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }} onClick={() => { setViewingUserId(selectedChat); setActivePage('viewProfile'); }}>
+              <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'linear-gradient(135deg, #667eea, #764ba2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>{selectedChatName?.[0] || '?'}</div>
               <div>
-                <div style={{ color: 'white', fontWeight: 'bold', fontSize: '13px' }}>{selectedChat}</div>
-                <div style={{ color: '#4ade80', fontSize: '9px' }}>Online</div>
+                <div style={{ color: 'white', fontWeight: 'bold', fontSize: '13px' }}>{selectedChatName}</div>
+                <div style={{ color: selectedChatUser?.online ? '#4ade80' : 'rgba(255,255,255,0.5)', fontSize: '9px' }}>{selectedChatUser?.online ? 'Online' : 'Offline'}</div>
               </div>
             </div>
             <div style={{ display: 'flex', gap: '8px' }}>
-              <button onClick={() => sendFile(selectedChat, 'audio')} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><Mic size={14} color="white" /></button>
-              <button onClick={() => sendFile(selectedChat, 'video')} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><Video size={14} color="white" /></button>
-              <button onClick={() => sendFile(selectedChat, 'file')} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><Paperclip size={14} color="white" /></button>
               <button onClick={() => startCall('Audio')} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><Phone size={14} color="white" /></button>
-              <button onClick={() => startCall('Video')} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><VideoIcon size={14} color="white" /></button>
+              <button onClick={() => startCall('Video')} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><Video size={14} color="white" /></button>
             </div>
           </div>
-          
           <div style={{ maxHeight: '120px', overflowY: 'auto', marginBottom: '10px' }}>
-            {(messages[selectedChat] || []).slice(-3).map((msg) => (
-              <div key={msg.id} style={{ display: 'flex', justifyContent: msg.isOwn ? 'flex-end' : 'flex-start', marginBottom: '6px' }}>
-                <div style={{ 
-                  maxWidth: '85%', 
-                  background: msg.isOwn ? 'rgba(100,150,255,0.3)' : 'rgba(255,255,255,0.1)', 
-                  padding: '6px 10px', 
-                  borderRadius: '12px', 
-                  fontSize: '12px', 
-                  color: 'white' 
-                }}>{msg.text}</div>
+            {chatMessages.slice(-3).map((msg) => (
+              <div key={msg.id} style={{ display: 'flex', justifyContent: msg.sender_id === currentUser?.id ? 'flex-end' : 'flex-start', marginBottom: '6px' }}>
+                <div style={{ maxWidth: '85%', background: msg.sender_id === currentUser?.id ? 'rgba(100,150,255,0.3)' : 'rgba(255,255,255,0.1)', padding: '6px 10px', borderRadius: '12px', fontSize: '12px', color: 'white' }}>{msg.content}</div>
               </div>
             ))}
           </div>
@@ -1911,6 +1900,76 @@ const ForestLayout: React.FC = () => {
     </div>
   );
 
+  const UserProfileView = () => {
+    const [profileUser, setProfileUser] = useState<any>(null);
+    const [userPosts, setUserPosts] = useState<any[]>([]);
+    const [followerCount, setFollowerCount] = useState(0);
+    const [followingCount, setFollowingCount] = useState(0);
+
+    useEffect(() => {
+      if (!viewingUserId) return;
+      const load = async () => {
+        const { data: profile } = await supabase.from('profiles').select('*').eq('id', viewingUserId).single();
+        setProfileUser(profile);
+        const { data: books } = await supabase.from('books').select('*').eq('author_id', viewingUserId).eq('is_published', true).order('created_at', { ascending: false });
+        setUserPosts(books || []);
+        const { count: fc } = await supabase.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', viewingUserId);
+        const { count: fgc } = await supabase.from('follows').select('*', { count: 'exact', head: true }).eq('follower_id', viewingUserId);
+        setFollowerCount(fc || 0);
+        setFollowingCount(fgc || 0);
+      };
+      load();
+    }, [viewingUserId]);
+
+    if (!profileUser) return <div style={{ padding: '40px', textAlign: 'center', color: 'white' }}>Loading...</div>;
+    const isFollowing = (followedUsers as any[]).includes(viewingUserId);
+
+    return (
+      <div style={{ padding: '12px', paddingBottom: isMobile ? '80px' : '20px' }}>
+        <div style={{ ...transparentStyle, padding: '24px', marginBottom: '16px', position: 'relative' }}>
+          <button onClick={() => setActivePage('home')} style={{ position: 'absolute', top: '16px', left: '16px', background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '50%', padding: '8px', cursor: 'pointer' }}>
+            <ArrowLeft size={20} color="white" />
+          </button>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ width: '80px', height: '80px', borderRadius: '50%', background: 'linear-gradient(135deg, #667eea, #764ba2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '40px', margin: '0 auto 12px', overflow: 'hidden' }}>
+              {profileUser.avatar_url ? <img src={profileUser.avatar_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : (profileUser.display_name?.[0]?.toUpperCase() || '👤')}
+            </div>
+            <h2 style={{ color: 'white', margin: '0 0 4px 0' }}>{profileUser.display_name || profileUser.username || 'User'}</h2>
+            <p style={{ color: 'rgba(255,255,255,0.6)', margin: '0 0 8px 0', fontSize: '14px' }}>@{profileUser.username || viewingUserId?.substring(0, 8)}</p>
+            {profileUser.bio && <p style={{ color: 'rgba(255,255,255,0.7)', margin: '0 0 16px 0', fontSize: '13px' }}>{profileUser.bio}</p>}
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '24px', marginBottom: '16px' }}>
+              <div style={{ textAlign: 'center' }}><div style={{ color: 'white', fontWeight: 'bold' }}>{userPosts.length}</div><div style={{ color: 'rgba(255,255,255,0.5)', fontSize: '11px' }}>Posts</div></div>
+              <div style={{ textAlign: 'center' }}><div style={{ color: 'white', fontWeight: 'bold' }}>{followerCount}</div><div style={{ color: 'rgba(255,255,255,0.5)', fontSize: '11px' }}>Followers</div></div>
+              <div style={{ textAlign: 'center' }}><div style={{ color: 'white', fontWeight: 'bold' }}>{followingCount}</div><div style={{ color: 'rgba(255,255,255,0.5)', fontSize: '11px' }}>Following</div></div>
+            </div>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+              <button onClick={() => isFollowing ? unfollowUser(viewingUserId!) : followUser(viewingUserId!)} style={{ padding: '10px 24px', borderRadius: '24px', background: isFollowing ? 'rgba(100,150,255,0.3)' : 'linear-gradient(135deg, #667eea, #764ba2)', border: 'none', color: 'white', cursor: 'pointer', fontWeight: 'bold' }}>
+                {isFollowing ? 'Following' : 'Follow'}
+              </button>
+              <button onClick={() => { setSelectedChat(viewingUserId!); setActivePage('messages'); }} style={{ padding: '10px 24px', borderRadius: '24px', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.3)', color: 'white', cursor: 'pointer' }}>
+                Message
+              </button>
+            </div>
+          </div>
+        </div>
+        <div style={{ ...transparentStyle, padding: '16px' }}>
+          <h3 style={{ color: 'white', marginBottom: '12px' }}>Posts ({userPosts.length})</h3>
+          {userPosts.length > 0 ? (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px' }}>
+              {userPosts.map(post => (
+                <div key={post.id} style={{ aspectRatio: '1', backgroundImage: post.cover_image_url ? `url(${post.cover_image_url})` : 'linear-gradient(135deg, #667eea, #764ba2)', backgroundSize: 'cover', backgroundPosition: 'center', borderRadius: '8px', display: 'flex', alignItems: 'flex-end', padding: '6px' }}>
+                  <span style={{ color: 'white', fontSize: '10px', textShadow: '0 1px 3px rgba(0,0,0,0.8)' }}>{post.title?.substring(0, 20)}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p style={{ color: 'rgba(255,255,255,0.5)', textAlign: 'center', padding: '20px' }}>No posts yet</p>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   const renderPage = () => {
     switch(activePage) {
       case 'home': return <HomePage />;
@@ -1918,6 +1977,7 @@ const ForestLayout: React.FC = () => {
       case 'messages': return <MessagesPage />;
       case 'notifications': return <NotificationsPage />;
       case 'profile': return <ProfilePage />;
+      case 'viewProfile': return <UserProfileView />;
       default: return <HomePage />;
     }
   };
