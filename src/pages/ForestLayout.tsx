@@ -1918,6 +1918,76 @@ const ForestLayout: React.FC = () => {
     </div>
   );
 
+  const UserProfileView = () => {
+    const [profileUser, setProfileUser] = useState<any>(null);
+    const [userPosts, setUserPosts] = useState<any[]>([]);
+    const [followerCount, setFollowerCount] = useState(0);
+    const [followingCount, setFollowingCount] = useState(0);
+
+    useEffect(() => {
+      if (!viewingUserId) return;
+      const load = async () => {
+        const { data: profile } = await supabase.from('profiles').select('*').eq('id', viewingUserId).single();
+        setProfileUser(profile);
+        const { data: books } = await supabase.from('books').select('*').eq('author_id', viewingUserId).eq('is_published', true).order('created_at', { ascending: false });
+        setUserPosts(books || []);
+        const { count: fc } = await supabase.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', viewingUserId);
+        const { count: fgc } = await supabase.from('follows').select('*', { count: 'exact', head: true }).eq('follower_id', viewingUserId);
+        setFollowerCount(fc || 0);
+        setFollowingCount(fgc || 0);
+      };
+      load();
+    }, [viewingUserId]);
+
+    if (!profileUser) return <div style={{ padding: '40px', textAlign: 'center', color: 'white' }}>Loading...</div>;
+    const isFollowing = (followedUsers as any[]).includes(viewingUserId);
+
+    return (
+      <div style={{ padding: '12px', paddingBottom: isMobile ? '80px' : '20px' }}>
+        <div style={{ ...transparentStyle, padding: '24px', marginBottom: '16px', position: 'relative' }}>
+          <button onClick={() => setActivePage('home')} style={{ position: 'absolute', top: '16px', left: '16px', background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '50%', padding: '8px', cursor: 'pointer' }}>
+            <ArrowLeft size={20} color="white" />
+          </button>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ width: '80px', height: '80px', borderRadius: '50%', background: 'linear-gradient(135deg, #667eea, #764ba2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '40px', margin: '0 auto 12px', overflow: 'hidden' }}>
+              {profileUser.avatar_url ? <img src={profileUser.avatar_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : (profileUser.display_name?.[0]?.toUpperCase() || '👤')}
+            </div>
+            <h2 style={{ color: 'white', margin: '0 0 4px 0' }}>{profileUser.display_name || profileUser.username || 'User'}</h2>
+            <p style={{ color: 'rgba(255,255,255,0.6)', margin: '0 0 8px 0', fontSize: '14px' }}>@{profileUser.username || viewingUserId?.substring(0, 8)}</p>
+            {profileUser.bio && <p style={{ color: 'rgba(255,255,255,0.7)', margin: '0 0 16px 0', fontSize: '13px' }}>{profileUser.bio}</p>}
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '24px', marginBottom: '16px' }}>
+              <div style={{ textAlign: 'center' }}><div style={{ color: 'white', fontWeight: 'bold' }}>{userPosts.length}</div><div style={{ color: 'rgba(255,255,255,0.5)', fontSize: '11px' }}>Posts</div></div>
+              <div style={{ textAlign: 'center' }}><div style={{ color: 'white', fontWeight: 'bold' }}>{followerCount}</div><div style={{ color: 'rgba(255,255,255,0.5)', fontSize: '11px' }}>Followers</div></div>
+              <div style={{ textAlign: 'center' }}><div style={{ color: 'white', fontWeight: 'bold' }}>{followingCount}</div><div style={{ color: 'rgba(255,255,255,0.5)', fontSize: '11px' }}>Following</div></div>
+            </div>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+              <button onClick={() => isFollowing ? unfollowUser(viewingUserId!) : followUser(viewingUserId!)} style={{ padding: '10px 24px', borderRadius: '24px', background: isFollowing ? 'rgba(100,150,255,0.3)' : 'linear-gradient(135deg, #667eea, #764ba2)', border: 'none', color: 'white', cursor: 'pointer', fontWeight: 'bold' }}>
+                {isFollowing ? 'Following' : 'Follow'}
+              </button>
+              <button onClick={() => { setSelectedChat(viewingUserId!); setActivePage('messages'); }} style={{ padding: '10px 24px', borderRadius: '24px', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.3)', color: 'white', cursor: 'pointer' }}>
+                Message
+              </button>
+            </div>
+          </div>
+        </div>
+        <div style={{ ...transparentStyle, padding: '16px' }}>
+          <h3 style={{ color: 'white', marginBottom: '12px' }}>Posts ({userPosts.length})</h3>
+          {userPosts.length > 0 ? (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px' }}>
+              {userPosts.map(post => (
+                <div key={post.id} style={{ aspectRatio: '1', backgroundImage: post.cover_image_url ? `url(${post.cover_image_url})` : 'linear-gradient(135deg, #667eea, #764ba2)', backgroundSize: 'cover', backgroundPosition: 'center', borderRadius: '8px', display: 'flex', alignItems: 'flex-end', padding: '6px' }}>
+                  <span style={{ color: 'white', fontSize: '10px', textShadow: '0 1px 3px rgba(0,0,0,0.8)' }}>{post.title?.substring(0, 20)}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p style={{ color: 'rgba(255,255,255,0.5)', textAlign: 'center', padding: '20px' }}>No posts yet</p>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   const renderPage = () => {
     switch(activePage) {
       case 'home': return <HomePage />;
@@ -1925,6 +1995,7 @@ const ForestLayout: React.FC = () => {
       case 'messages': return <MessagesPage />;
       case 'notifications': return <NotificationsPage />;
       case 'profile': return <ProfilePage />;
+      case 'viewProfile': return <UserProfileView />;
       default: return <HomePage />;
     }
   };
