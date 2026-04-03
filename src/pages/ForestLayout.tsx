@@ -73,21 +73,14 @@ const ForestLayout: React.FC = () => {
   ]);
 
   // ============ CHAT STATE ============
-  const [messages, setMessages] = useState<{[key: string]: Array<{id: number, text: string, time: string, isOwn: boolean, delivered?: boolean, read?: boolean, audio?: string, video?: string, file?: {name: string, url: string, type: string}}>}>({
-    'Sarah Meyer': [
-      { id: 1, text: 'Hey are you writing tonight?', time: '2:30 PM', isOwn: false, delivered: true, read: true },
-      { id: 2, text: 'Yes! Working on the new chapter', time: '2:31 PM', isOwn: true, delivered: true, read: true },
-      { id: 3, text: 'Can\'t wait to read it!', time: '2:32 PM', isOwn: false, delivered: true, read: false },
-    ],
-    'ElaraWrites': [
-      { id: 1, text: 'I loved your new story!', time: '3:00 PM', isOwn: false, delivered: true, read: true },
-    ],
-  });
+  const [chatMessages, setChatMessages] = useState<any[]>([]);
   
   // ============ OTHER STATE ============
   const [newMessage, setNewMessage] = useState('');
-  const [selectedChat, setSelectedChat] = useState('Sarah Meyer');
+  const [selectedChat, setSelectedChat] = useState('');
   const [activePage, setActivePage] = useState('home');
+  const [viewingUserId, setViewingUserId] = useState<string | null>(null);
+  const [realConversations, setRealConversations] = useState<any[]>([]);
   const [showSettings, setShowSettings] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(true);
   const [showNotifications, setShowNotifications] = useState(false);
