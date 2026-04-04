@@ -734,7 +734,7 @@ const ForestLayout: React.FC = () => {
   };
 
   const { incomingCall, acceptCall, declineCall } = useIncomingCalls(currentUser?.id);
-
+  const [activeCall, setActiveCall] = useState<{ url: string; isAudioOnly: boolean } | null>(null);
 
 
   const startCall = async (type: string) => {
