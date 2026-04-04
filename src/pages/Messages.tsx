@@ -264,6 +264,20 @@ const Messages = () => {
         {activeCall && (
           <VideoCall roomUrl={activeCall.url} isAudioOnly={activeCall.isAudioOnly} onLeave={() => setActiveCall(null)} />
         )}
+        {incomingCall && (
+          <IncomingCallModal
+            callerName={incomingCall.callerName}
+            callerAvatar={incomingCall.callerAvatar}
+            callType={incomingCall.callType}
+            onAccept={() => {
+              const call = acceptCall();
+              if (call) {
+                setActiveCall({ url: call.roomUrl, isAudioOnly: call.callType === "audio" });
+              }
+            }}
+            onDecline={declineCall}
+          />
+        )}
         <div className="flex flex-col h-[calc(100vh-var(--nav-height)-var(--bottom-nav-height))]" style={{ ...bgStyle, fontFamily, ...wallpaperStyle }}>
           <ChatHeader partner={chatPartner} chatId={activeChat} onBack={() => setActiveChat(null)} onStartCall={startCall} bgStyle={bgStyle} borderStyle={borderStyle} textStyle={textStyle} mutedStyle={mutedStyle} />
 
