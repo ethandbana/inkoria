@@ -23,13 +23,27 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Not authenticated' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
-    const dailyApiKey = Deno.env.get('DAILY_API_KEY')
+    const rawDailyApiKey = Deno.env.get('DAILY_API_KEY') ?? ''
+    const dailyApiKey = rawDailyApiKey
+      .trim()
+      .replace(/^['\"]|['\"]$/g, '')
+      .replace(/^Bearer\s+/i, '')
+
     if (!dailyApiKey) {
       return new Response(JSON.stringify({ error: 'Daily API key not configured' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
     const body = await req.json()
     const { partnerId, callType } = body
+
+    if (typeof partnerId !== 'string' || !partnerId || (callType !== 'audio' && callType !== 'video')) {
+      return new Response(JSON.stringify({ error: 'Invalid request payload' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    const normalizedCallType = callType === 'video' ? 'video' : 'audio'
 
     const roomName = `inkoria-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
 
@@ -45,7 +59,7 @@ Deno.serve(async (req) => {
           exp: Math.floor(Date.now() / 1000) + 3600,
           enable_chat: true,
           enable_knocking: false,
-          start_video_off: callType === 'audio',
+          start_video_off: normalizedCallType === 'audio',
           start_audio_off: false,
         },
       }),
@@ -53,7 +67,12 @@ Deno.serve(async (req) => {
 
     if (!roomRes.ok) {
       const errText = await roomRes.text()
-      console.error('Daily API error:', errText)
+      console.error('Daily API error:', {
+        status: roomRes.status,
+        detail: errText,
+        keyLength: dailyApiKey.length,
+        normalizedSecret: rawDailyApiKey !== dailyApiKey,
+      })
       return new Response(JSON.stringify({ error: 'Failed to create room', detail: errText }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
@@ -63,8 +82,8 @@ Deno.serve(async (req) => {
     await supabase.from('notifications').insert({
       user_id: partnerId,
       from_user_id: user.id,
-      title: callType === 'video' ? '📹 Incoming Video Call' : '📞 Incoming Voice Call',
-      body: `You have an incoming ${callType} call`,
+      title: normalizedCallType === 'video' ? '📹 Incoming Video Call' : '📞 Incoming Voice Call',
+      body: `You have an incoming ${normalizedCallType} call`,
       type: 'call',
       link: room.url,
     })
