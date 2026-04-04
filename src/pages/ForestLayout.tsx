@@ -13,6 +13,8 @@ import { ThoughtStream } from '../components/ThoughtStream';
 import { NotificationModal } from '../components/NotificationModal';
 import { Drafts } from '../components/Drafts';
 import { VideoCall } from '../components/VideoCall';
+import IncomingCallModal from '../components/IncomingCallModal';
+import { useIncomingCalls } from '../hooks/useIncomingCalls';
 import { Sparkles } from 'lucide-react';
 import { 
   Home, Search, Compass, Heart, User, PlusSquare, 
