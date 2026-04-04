@@ -1,8 +1,9 @@
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 }
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -10,7 +11,6 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // Verify user is authenticated
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!
     const authHeader = req.headers.get('Authorization')
@@ -29,10 +29,9 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json()
-    const { partnerId, callType } = body // callType: 'audio' | 'video'
+    const { partnerId, callType } = body
 
-    // Create a unique room name
-    const roomName = `inkoria-${[user.id, partnerId].sort().join('-').substring(0, 30)}-${Date.now()}`
+    const roomName = `inkoria-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
 
     const roomRes = await fetch('https://api.daily.co/v1/rooms', {
       method: 'POST',
@@ -43,7 +42,7 @@ Deno.serve(async (req) => {
       body: JSON.stringify({
         name: roomName.substring(0, 64),
         properties: {
-          exp: Math.floor(Date.now() / 1000) + 3600, // 1 hour expiry
+          exp: Math.floor(Date.now() / 1000) + 3600,
           enable_chat: true,
           enable_knocking: false,
           start_video_off: callType === 'audio',
@@ -55,12 +54,12 @@ Deno.serve(async (req) => {
     if (!roomRes.ok) {
       const errText = await roomRes.text()
       console.error('Daily API error:', errText)
-      return new Response(JSON.stringify({ error: 'Failed to create room' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      return new Response(JSON.stringify({ error: 'Failed to create room', detail: errText }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
     const room = await roomRes.json()
 
-    // Create a notification for the partner
+    // Notify the partner about the incoming call
     await supabase.from('notifications').insert({
       user_id: partnerId,
       from_user_id: user.id,
