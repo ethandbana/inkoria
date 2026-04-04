@@ -15,6 +15,8 @@ import ConversationItem from "@/components/chat/ConversationItem";
 import TypingIndicator from "@/components/chat/TypingIndicator";
 import NewConversationModal from "@/components/NewConversationModal";
 import { VideoCall } from "@/components/VideoCall";
+import IncomingCallModal from "@/components/IncomingCallModal";
+import { useIncomingCalls } from "@/hooks/useIncomingCalls";
 
 interface Conversation {
   userId: string;
@@ -41,6 +43,7 @@ const Messages = () => {
   const [activeCall, setActiveCall] = useState<{ url: string; isAudioOnly: boolean } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const { incomingCall, acceptCall, declineCall } = useIncomingCalls(user?.id);
 
   // Per-chat theme CSS variables
   const chatVars = useMemo(() => {
@@ -260,6 +263,20 @@ const Messages = () => {
       <Layout>
         {activeCall && (
           <VideoCall roomUrl={activeCall.url} isAudioOnly={activeCall.isAudioOnly} onLeave={() => setActiveCall(null)} />
+        )}
+        {incomingCall && (
+          <IncomingCallModal
+            callerName={incomingCall.callerName}
+            callerAvatar={incomingCall.callerAvatar}
+            callType={incomingCall.callType}
+            onAccept={() => {
+              const call = acceptCall();
+              if (call) {
+                setActiveCall({ url: call.roomUrl, isAudioOnly: call.callType === "audio" });
+              }
+            }}
+            onDecline={declineCall}
+          />
         )}
         <div className="flex flex-col h-[calc(100vh-var(--nav-height)-var(--bottom-nav-height))]" style={{ ...bgStyle, fontFamily, ...wallpaperStyle }}>
           <ChatHeader partner={chatPartner} chatId={activeChat} onBack={() => setActiveChat(null)} onStartCall={startCall} bgStyle={bgStyle} borderStyle={borderStyle} textStyle={textStyle} mutedStyle={mutedStyle} />

@@ -13,6 +13,8 @@ import { ThoughtStream } from '../components/ThoughtStream';
 import { NotificationModal } from '../components/NotificationModal';
 import { Drafts } from '../components/Drafts';
 import { VideoCall } from '../components/VideoCall';
+import IncomingCallModal from '../components/IncomingCallModal';
+import { useIncomingCalls } from '../hooks/useIncomingCalls';
 import { Sparkles } from 'lucide-react';
 import { 
   Home, Search, Compass, Heart, User, PlusSquare, 
@@ -731,9 +733,9 @@ const ForestLayout: React.FC = () => {
     input.click();
   };
 
-
-
+  const { incomingCall, acceptCall, declineCall } = useIncomingCalls(currentUser?.id);
   const [activeCall, setActiveCall] = useState<{ url: string; isAudioOnly: boolean } | null>(null);
+
 
   const startCall = async (type: string) => {
     if (!currentUser || !selectedChat) return;
@@ -2004,6 +2006,20 @@ const ForestLayout: React.FC = () => {
       <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundImage: `url(${backgroundImage})`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundAttachment: 'fixed', zIndex: 0 }} />
       <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0, 0, 0, 0.25)', zIndex: 1 }} />
       {activeCall && <VideoCall roomUrl={activeCall.url} isAudioOnly={activeCall.isAudioOnly} onLeave={() => setActiveCall(null)} />}
+      {incomingCall && (
+        <IncomingCallModal
+          callerName={incomingCall.callerName}
+          callerAvatar={incomingCall.callerAvatar}
+          callType={incomingCall.callType}
+          onAccept={() => {
+            const call = acceptCall();
+            if (call) {
+              setActiveCall({ url: call.roomUrl, isAudioOnly: call.callType === "audio" });
+            }
+          }}
+          onDecline={declineCall}
+        />
+      )}
       
       {showSettings && <SettingsModal />}
       {showOnboarding && <OnboardingTour onComplete={() => setShowOnboarding(false)} />}
