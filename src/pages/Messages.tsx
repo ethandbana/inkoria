@@ -43,6 +43,7 @@ const Messages = () => {
   const [activeCall, setActiveCall] = useState<{ url: string; isAudioOnly: boolean } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const { incomingCall, acceptCall, declineCall } = useIncomingCalls(user?.id);
 
   // Per-chat theme CSS variables
   const chatVars = useMemo(() => {
