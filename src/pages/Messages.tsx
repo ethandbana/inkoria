@@ -14,9 +14,9 @@ import ChatInput from "@/components/chat/ChatInput";
 import ConversationItem from "@/components/chat/ConversationItem";
 import TypingIndicator from "@/components/chat/TypingIndicator";
 import NewConversationModal from "@/components/NewConversationModal";
-import { VideoCall } from "@/components/VideoCall";
-import IncomingCallModal from "@/components/IncomingCallModal";
-import { useIncomingCalls } from "@/hooks/useIncomingCalls";
+import WebRTCCallComponent from "@/components/WebRTCCall";
+import WebRTCIncomingCall from "@/components/WebRTCIncomingCall";
+import { useWebRTC } from "@/hooks/useWebRTC";
 
 interface Conversation {
   userId: string;
@@ -40,10 +40,37 @@ const Messages = () => {
   const [search, setSearch] = useState("");
   const [isPartnerTyping, setIsPartnerTyping] = useState(false);
   const [showNewConversation, setShowNewConversation] = useState(false);
-  const [activeCall, setActiveCall] = useState<{ url: string; isAudioOnly: boolean } | null>(null);
+  const [userProfile, setUserProfile] = useState<any>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const { incomingCall, acceptCall, declineCall } = useIncomingCalls(user?.id);
+
+  // Fetch user profile for WebRTC display name
+  useEffect(() => {
+    if (!user) return;
+    supabase.from("profiles").select("display_name, username, avatar_url").eq("id", user.id).single()
+      .then(({ data }) => setUserProfile(data));
+  }, [user]);
+
+  // Native WebRTC calling
+  const {
+    callState,
+    activeCall,
+    incomingCall,
+    localStream,
+    remoteStream,
+    isMuted,
+    isVideoOff,
+    startCall,
+    acceptCall: acceptWebRTCCall,
+    declineCall: declineWebRTCCall,
+    endCall,
+    toggleMute,
+    toggleVideo,
+  } = useWebRTC(
+    user?.id,
+    userProfile?.display_name || userProfile?.username,
+    userProfile?.avatar_url
+  );
 
   // Per-chat theme CSS variables
   const chatVars = useMemo(() => {
@@ -195,21 +222,18 @@ const Messages = () => {
     supabase.channel(channelName).send({ type: "broadcast", event: "typing", payload: { userId: user.id } });
   }, [user, activeChat]);
 
-  const startCall = async (callType: "audio" | "video") => {
-    if (!activeChat || !user) return;
-    toast.info(`Starting ${callType} call...`);
-    try {
-      const { data, error } = await supabase.functions.invoke("create-daily-room", {
-        body: { partnerId: activeChat, callType },
-      });
-      if (error) throw error;
-      if (data?.url) {
-        setActiveCall({ url: data.url, isAudioOnly: callType === "audio" });
-      }
-    } catch (err: any) {
-      toast.error("Failed to start call: " + (err.message || "Unknown error"));
-    }
-  };
+  const handleStartCall = useCallback(
+    (callType: "audio" | "video") => {
+      if (!chatPartner || !activeChat) return;
+      startCall(
+        activeChat,
+        chatPartner.display_name || chatPartner.username || "User",
+        chatPartner.avatar_url || null,
+        callType
+      );
+    },
+    [chatPartner, activeChat, startCall]
+  );
 
   const formatTime = (dateStr: string) => {
     const d = new Date(dateStr);
@@ -230,6 +254,9 @@ const Messages = () => {
       </Layout>
     );
   }
+
+  // ── Active call overlay ──
+  const showActiveCall = callState === "calling" || callState === "connected";
 
   // ── Active chat view ──
   if (activeChat && chatPartner) {
@@ -261,25 +288,34 @@ const Messages = () => {
 
     return (
       <Layout>
-        {activeCall && (
-          <VideoCall roomUrl={activeCall.url} isAudioOnly={activeCall.isAudioOnly} onLeave={() => setActiveCall(null)} />
-        )}
-        {incomingCall && (
-          <IncomingCallModal
-            callerName={incomingCall.callerName}
-            callerAvatar={incomingCall.callerAvatar}
-            callType={incomingCall.callType}
-            onAccept={() => {
-              const call = acceptCall();
-              if (call) {
-                setActiveCall({ url: call.roomUrl, isAudioOnly: call.callType === "audio" });
-              }
-            }}
-            onDecline={declineCall}
+        {/* WebRTC Active Call */}
+        {showActiveCall && activeCall && (
+          <WebRTCCallComponent
+            callType={activeCall.callType}
+            partnerName={activeCall.partnerName}
+            partnerAvatar={activeCall.partnerAvatar}
+            callState={callState as "calling" | "connected"}
+            localStream={localStream}
+            remoteStream={remoteStream}
+            isMuted={isMuted}
+            isVideoOff={isVideoOff}
+            onToggleMute={toggleMute}
+            onToggleVideo={toggleVideo}
+            onEndCall={endCall}
           />
         )}
+
+        {/* WebRTC Incoming Call */}
+        {incomingCall && (
+          <WebRTCIncomingCall
+            call={incomingCall}
+            onAccept={acceptWebRTCCall}
+            onDecline={declineWebRTCCall}
+          />
+        )}
+
         <div className="flex flex-col h-[calc(100vh-var(--nav-height)-var(--bottom-nav-height))]" style={{ ...bgStyle, fontFamily, ...wallpaperStyle }}>
-          <ChatHeader partner={chatPartner} chatId={activeChat} onBack={() => setActiveChat(null)} onStartCall={startCall} bgStyle={bgStyle} borderStyle={borderStyle} textStyle={textStyle} mutedStyle={mutedStyle} />
+          <ChatHeader partner={chatPartner} chatId={activeChat} onBack={() => setActiveChat(null)} onStartCall={handleStartCall} bgStyle={bgStyle} borderStyle={borderStyle} textStyle={textStyle} mutedStyle={mutedStyle} />
 
           {/* Messages */}
           <div className="flex-1 overflow-y-auto p-4 space-y-3" style={{ fontSize: `${globalPrefs.fontSize}px` }}>
@@ -310,6 +346,15 @@ const Messages = () => {
 
   return (
     <Layout>
+      {/* Incoming call even when not in a chat */}
+      {incomingCall && (
+        <WebRTCIncomingCall
+          call={incomingCall}
+          onAccept={acceptWebRTCCall}
+          onDecline={declineWebRTCCall}
+        />
+      )}
+
       {showNewConversation && user && (
         <NewConversationModal
           currentUserId={user.id}
