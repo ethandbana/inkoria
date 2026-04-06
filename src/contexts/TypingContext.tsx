@@ -28,14 +28,14 @@ export const TypingProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   }, []);
 
   useEffect(() => {
-    if (!user) return;
+    if (!currentUserId) return;
 
     const channel = supabase.channel("typing-global");
 
     channel.on("broadcast", { event: "typing" }, (payload: any) => {
       const { userId, userName, chatId } = payload.payload;
 
-      if (userId === user.id) return;
+      if (userId === currentUserId) return;
 
       setActiveTyping((prev) => {
         const filtered = prev.filter((t) => !(t.userId === userId && t.chatId === chatId));
