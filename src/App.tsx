@@ -25,12 +25,14 @@ function App() {
 
   return (
     <ThemeProvider>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/auth" element={!user ? <AuthComponent /> : <Navigate to="/" />} />
-          <Route path="/*" element={user ? <ForestLayout /> : <Navigate to="/auth" />} />
-        </Routes>
-      </BrowserRouter>
+      <TypingProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/auth" element={!user ? <AuthComponent /> : <Navigate to="/" />} />
+            <Route path="/*" element={user ? <ForestLayout /> : <Navigate to="/auth" />} />
+          </Routes>
+        </BrowserRouter>
+      </TypingProvider>
     </ThemeProvider>
   );
 }
