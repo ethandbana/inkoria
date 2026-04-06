@@ -3,6 +3,7 @@ import { useAuth } from './hooks/useAuth';
 import AuthComponent from './components/Auth';
 import ForestLayout from './pages/ForestLayout';
 import { ThemeProvider } from './contexts/ThemeContext';
+import { TypingProvider } from './contexts/TypingContext';
 
 function App() {
   const { user, loading } = useAuth();
