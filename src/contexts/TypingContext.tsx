@@ -52,7 +52,7 @@ export const TypingProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user]);
+  }, [currentUserId]);
 
   const clearTyping = (userId: string, chatId: string) => {
     setActiveTyping((prev) => prev.filter((t) => !(t.userId === userId && t.chatId === chatId)));
