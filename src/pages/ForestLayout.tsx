@@ -733,23 +733,37 @@ const ForestLayout: React.FC = () => {
     input.click();
   };
 
-  const { incomingCall, acceptCall, declineCall } = useIncomingCalls(currentUser?.id);
-  const [activeCall, setActiveCall] = useState<{ url: string; isAudioOnly: boolean } | null>(null);
-
+  const {
+    callState: webrtcCallState,
+    activeCall: webrtcActiveCall,
+    incomingCall,
+    localStream,
+    remoteStream,
+    isMuted,
+    isVideoOff,
+    startCall: webrtcStartCall,
+    acceptCall,
+    declineCall,
+    endCall: webrtcEndCall,
+    toggleMute,
+    toggleVideo,
+  } = useWebRTC(
+    currentUser?.id,
+    currentUser?.display_name || currentUser?.username,
+    currentUser?.avatar_url
+  );
 
   const startCall = async (type: string) => {
     if (!currentUser || !selectedChat) return;
-    try {
-      const { data, error } = await supabase.functions.invoke('create-daily-room', {
-        body: { partnerId: selectedChat, callType: type.toLowerCase() },
-      });
-      if (error) throw error;
-      if (data?.url) {
-        setActiveCall({ url: data.url, isAudioOnly: type.toLowerCase() === 'audio' });
-      }
-    } catch (err: any) {
-      alert(`Failed to start call: ${err.message}`);
-    }
+    // Get partner profile for display
+    const { data: partner } = await supabase.from('profiles').select('display_name, username, avatar_url').eq('id', selectedChat).single();
+    const callType = type.toLowerCase() === 'video' ? 'video' : 'audio' as const;
+    webrtcStartCall(
+      selectedChat,
+      partner?.display_name || partner?.username || 'User',
+      partner?.avatar_url || null,
+      callType
+    );
   };
 
   const handleBackgroundUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
