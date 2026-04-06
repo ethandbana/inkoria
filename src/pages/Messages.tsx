@@ -17,6 +17,7 @@ import NewConversationModal from "@/components/NewConversationModal";
 import WebRTCCallComponent from "@/components/WebRTCCall";
 import WebRTCIncomingCall from "@/components/WebRTCIncomingCall";
 import { useWebRTC } from "@/hooks/useWebRTC";
+import { useTyping } from "@/contexts/TypingContext";
 
 interface Conversation {
   userId: string;
@@ -26,6 +27,7 @@ interface Conversation {
   lastTime: string;
   unread: number;
   isOnline: boolean;
+  lastSeen: string | null;
 }
 
 const Messages = () => {
@@ -43,6 +45,7 @@ const Messages = () => {
   const [userProfile, setUserProfile] = useState<any>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const { activeTyping, clearTyping } = useTyping();
 
   // Fetch user profile for WebRTC display name
   useEffect(() => {
@@ -72,6 +75,11 @@ const Messages = () => {
     userProfile?.avatar_url
   );
 
+  // Check if partner is typing from global context
+  const isPartnerTypingGlobal = activeTyping.some(
+    (t) => t.userId === activeChat && t.chatId === activeChat
+  );
+
   // Per-chat theme CSS variables
   const chatVars = useMemo(() => {
     if (!activeChat) return {};
@@ -88,6 +96,23 @@ const Messages = () => {
     }
   }, [searchParams, user]);
 
+  // Listen for presence updates
+  useEffect(() => {
+    const handlePresenceUpdate = (event: any) => {
+      const updatedProfile = event.detail;
+      setConversations((prev) =>
+        prev.map((conv) =>
+          conv.userId === updatedProfile.id
+            ? { ...conv, isOnline: updatedProfile.is_online, lastSeen: updatedProfile.last_seen }
+            : conv
+        )
+      );
+    };
+
+    window.addEventListener("presence-update", handlePresenceUpdate);
+    return () => window.removeEventListener("presence-update", handlePresenceUpdate);
+  }, []);
+
   useEffect(() => {
     if (!user) return;
     fetchConversations();
@@ -98,6 +123,9 @@ const Messages = () => {
         if (msg.sender_id === user.id || msg.receiver_id === user.id) {
           if (activeChat && (msg.sender_id === activeChat || msg.receiver_id === activeChat)) {
             setMessages((prev) => [...prev, msg]);
+            if (msg.sender_id === activeChat && !msg.is_read) {
+              supabase.from("messages").update({ is_read: true }).eq("id", msg.id);
+            }
           }
           fetchConversations();
         }
@@ -109,10 +137,12 @@ const Messages = () => {
         }
       })
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [user, activeChat]);
 
-  // Typing indicator channel
+  // Typing indicator channel (per chat)
   useEffect(() => {
     if (!user || !activeChat) return;
     const channel = supabase.channel(`typing-${[user.id, activeChat].sort().join("-")}`);
@@ -125,12 +155,14 @@ const Messages = () => {
         }
       })
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [user, activeChat]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isPartnerTyping]);
+  }, [messages, isPartnerTyping, isPartnerTypingGlobal]);
 
   const fetchConversations = async () => {
     if (!user) return;
@@ -142,12 +174,17 @@ const Messages = () => {
       if (m.sender_id !== user.id) partnerIds.add(m.sender_id);
       if (m.receiver_id !== user.id) partnerIds.add(m.receiver_id);
     });
-    if (partnerIds.size === 0) { setConversations([]); return; }
+    if (partnerIds.size === 0) {
+      setConversations([]);
+      return;
+    }
     const { data: profiles } = await supabase.from("profiles").select("*").in("id", Array.from(partnerIds));
     const profileMap = new Map((profiles || []).map((p) => [p.id, p]));
     const convos: Conversation[] = [];
     partnerIds.forEach((pid) => {
-      const partnerMsgs = allMessages.filter((m) => m.sender_id === pid || m.receiver_id === pid).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      const partnerMsgs = allMessages
+        .filter((m) => m.sender_id === pid || m.receiver_id === pid)
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
       const last = partnerMsgs[0];
       const profile = profileMap.get(pid);
       const unread = partnerMsgs.filter((m) => m.sender_id === pid && !m.is_read).length;
@@ -155,10 +192,15 @@ const Messages = () => {
         userId: pid,
         displayName: profile?.display_name || profile?.username || "User",
         avatarUrl: profile?.avatar_url,
-        lastMessage: last?.media_url ? "📎 Media" : last?.content || "",
+        lastMessage: last?.media_url
+          ? last.media_type === "audio"
+            ? "🎤 Voice note"
+            : "📎 Media"
+          : last?.content || "",
         lastTime: last?.created_at || "",
         unread,
         isOnline: profile?.is_online || false,
+        lastSeen: profile?.last_seen || null,
       });
     });
     convos.sort((a, b) => new Date(b.lastTime).getTime() - new Date(a.lastTime).getTime());
@@ -169,16 +211,24 @@ const Messages = () => {
     setActiveChat(partnerId);
     const { data: profile } = await supabase.from("profiles").select("*").eq("id", partnerId).single();
     setChatPartner(profile);
-    const { data } = await supabase.from("messages").select("*")
+    const { data } = await supabase
+      .from("messages")
+      .select("*")
       .or(`and(sender_id.eq.${user!.id},receiver_id.eq.${partnerId}),and(sender_id.eq.${partnerId},receiver_id.eq.${user!.id})`)
       .order("created_at", { ascending: true });
     setMessages(data || []);
     await supabase.from("messages").update({ is_read: true }).eq("sender_id", partnerId).eq("receiver_id", user!.id).eq("is_read", false);
+    clearTyping(partnerId, partnerId);
   };
 
   const sendMessage = async (content: string) => {
     if (!activeChat || !user) return;
-    const { error } = await supabase.from("messages").insert({ sender_id: user.id, receiver_id: activeChat, content });
+    const { error } = await supabase.from("messages").insert({
+      sender_id: user.id,
+      receiver_id: activeChat,
+      content,
+      is_read: false,
+    });
     if (error) toast.error("Failed to send");
   };
 
@@ -192,12 +242,17 @@ const Messages = () => {
       const { data: urlData } = supabase.storage.from("uploads").getPublicUrl(filePath);
       const mediaType = file.type.startsWith("image/") ? "image" : file.type.startsWith("video/") ? "video" : "file";
       const { error } = await supabase.from("messages").insert({
-        sender_id: user.id, receiver_id: activeChat,
+        sender_id: user.id,
+        receiver_id: activeChat,
         content: mediaType === "image" ? "📷 Photo" : mediaType === "video" ? "🎥 Video" : `📎 ${file.name}`,
-        media_url: urlData.publicUrl, media_type: mediaType,
+        media_url: urlData.publicUrl,
+        media_type: mediaType,
+        is_read: false,
       });
       if (error) throw error;
-    } catch (err: any) { toast.error(err.message); }
+    } catch (err: any) {
+      toast.error(err.message);
+    }
   };
 
   const sendVoice = async (blob: Blob) => {
@@ -208,19 +263,41 @@ const Messages = () => {
       if (uploadErr) throw uploadErr;
       const { data: urlData } = supabase.storage.from("uploads").getPublicUrl(filePath);
       const { error } = await supabase.from("messages").insert({
-        sender_id: user.id, receiver_id: activeChat,
+        sender_id: user.id,
+        receiver_id: activeChat,
         content: "🎤 Voice note",
-        media_url: urlData.publicUrl, media_type: "audio",
+        media_url: urlData.publicUrl,
+        media_type: "audio",
+        is_read: false,
       });
       if (error) throw error;
-    } catch (err: any) { toast.error(err.message); }
+      toast.success("Voice note sent");
+    } catch (err: any) {
+      toast.error(err.message);
+    }
   };
 
   const broadcastTyping = useCallback(() => {
     if (!user || !activeChat) return;
+    // Per-chat channel
     const channelName = `typing-${[user.id, activeChat].sort().join("-")}`;
-    supabase.channel(channelName).send({ type: "broadcast", event: "typing", payload: { userId: user.id } });
-  }, [user, activeChat]);
+    supabase.channel(channelName).send({
+      type: "broadcast",
+      event: "typing",
+      payload: { userId: user.id },
+    });
+    // Global channel for conversation list
+    const globalChannel = supabase.channel("typing-global");
+    globalChannel.send({
+      type: "broadcast",
+      event: "typing",
+      payload: {
+        userId: user.id,
+        userName: userProfile?.display_name || userProfile?.username || "Someone",
+        chatId: activeChat,
+      },
+    });
+  }, [user, activeChat, userProfile]);
 
   const handleStartCall = useCallback(
     (callType: "audio" | "video") => {
@@ -249,13 +326,14 @@ const Messages = () => {
       <Layout>
         <div className="flex flex-col items-center justify-center py-20 gap-4">
           <p className="text-muted-foreground font-body">Sign in to view messages</p>
-          <Button onClick={() => navigate("/auth")} className="gradient-primary border-0 text-primary-foreground font-body">Sign In</Button>
+          <Button onClick={() => navigate("/auth")} className="gradient-primary border-0 text-primary-foreground font-body">
+            Sign In
+          </Button>
         </div>
       </Layout>
     );
   }
 
-  // ── Active call overlay ──
   const showActiveCall = callState === "calling" || callState === "connected";
 
   // ── Active chat view ──
@@ -279,16 +357,26 @@ const Messages = () => {
       return { backgroundColor: `hsl(${chatVars["--chat-bubble-recv"]})`, color: `hsl(${chatVars["--chat-text"]})` };
     };
 
-    const inputStyle = hasChatTheme ? { backgroundColor: `hsl(${chatVars["--chat-bubble-recv"]})`, color: `hsl(${chatVars["--chat-text"]})` } : {};
+    const inputStyle = hasChatTheme
+      ? { backgroundColor: `hsl(${chatVars["--chat-bubble-recv"]})`, color: `hsl(${chatVars["--chat-text"]})` }
+      : {};
 
-    const fontFamily = globalPrefs.fontKey === "playfair" ? "'Playfair Display', serif" : globalPrefs.fontKey === "mono" ? "'Courier New', monospace" : globalPrefs.fontKey === "system" ? "system-ui, sans-serif" : "'Inter', sans-serif";
+    const fontFamily =
+      globalPrefs.fontKey === "playfair"
+        ? "'Playfair Display', serif"
+        : globalPrefs.fontKey === "mono"
+        ? "'Courier New', monospace"
+        : globalPrefs.fontKey === "system"
+        ? "system-ui, sans-serif"
+        : "'Inter', sans-serif";
     const wallpaperStyle: React.CSSProperties = globalPrefs.customWallpaperUrl
       ? { backgroundImage: `url(${globalPrefs.customWallpaperUrl})`, backgroundSize: "cover", backgroundPosition: "center" }
       : {};
 
+    const showTyping = isPartnerTyping || isPartnerTypingGlobal;
+
     return (
       <Layout>
-        {/* WebRTC Active Call */}
         {showActiveCall && activeCall && (
           <WebRTCCallComponent
             callType={activeCall.callType}
@@ -305,24 +393,34 @@ const Messages = () => {
           />
         )}
 
-        {/* WebRTC Incoming Call */}
         {incomingCall && (
-          <WebRTCIncomingCall
-            call={incomingCall}
-            onAccept={acceptWebRTCCall}
-            onDecline={declineWebRTCCall}
-          />
+          <WebRTCIncomingCall call={incomingCall} onAccept={acceptWebRTCCall} onDecline={declineWebRTCCall} />
         )}
 
         <div className="flex flex-col h-[calc(100vh-var(--nav-height)-var(--bottom-nav-height))]" style={{ ...bgStyle, fontFamily, ...wallpaperStyle }}>
-          <ChatHeader partner={chatPartner} chatId={activeChat} onBack={() => setActiveChat(null)} onStartCall={handleStartCall} bgStyle={bgStyle} borderStyle={borderStyle} textStyle={textStyle} mutedStyle={mutedStyle} />
+          <ChatHeader
+            partner={chatPartner}
+            chatId={activeChat}
+            onBack={() => setActiveChat(null)}
+            onStartCall={handleStartCall}
+            bgStyle={bgStyle}
+            borderStyle={borderStyle}
+            textStyle={textStyle}
+            mutedStyle={mutedStyle}
+          />
 
-          {/* Messages */}
           <div className="flex-1 overflow-y-auto p-4 space-y-3" style={{ fontSize: `${globalPrefs.fontSize}px` }}>
             {messages.map((msg) => (
-              <ChatBubble key={msg.id} msg={msg} isSent={msg.sender_id === user.id} hasChatTheme={hasChatTheme} sentStyle={getSentBubbleStyle()} recvStyle={getRecvBubbleStyle()} />
+              <ChatBubble
+                key={msg.id}
+                msg={msg}
+                isSent={msg.sender_id === user.id}
+                hasChatTheme={hasChatTheme}
+                sentStyle={getSentBubbleStyle()}
+                recvStyle={getRecvBubbleStyle()}
+              />
             ))}
-            {isPartnerTyping && <TypingIndicator />}
+            {showTyping && <TypingIndicator />}
             <div ref={messagesEndRef} />
           </div>
 
@@ -346,13 +444,8 @@ const Messages = () => {
 
   return (
     <Layout>
-      {/* Incoming call even when not in a chat */}
       {incomingCall && (
-        <WebRTCIncomingCall
-          call={incomingCall}
-          onAccept={acceptWebRTCCall}
-          onDecline={declineWebRTCCall}
-        />
+        <WebRTCIncomingCall call={incomingCall} onAccept={acceptWebRTCCall} onDecline={declineWebRTCCall} />
       )}
 
       {showNewConversation && user && (
@@ -382,11 +475,19 @@ const Messages = () => {
             <div className="text-center py-16 space-y-3">
               <p className="text-muted-foreground font-body text-sm">No conversations yet</p>
               <p className="text-xs text-muted-foreground font-body">Tap the pen icon above to start a new chat</p>
-              <Button variant="outline" onClick={() => setShowNewConversation(true)} className="font-body text-sm">Start a Conversation</Button>
+              <Button variant="outline" onClick={() => setShowNewConversation(true)} className="font-body text-sm">
+                Start a Conversation
+              </Button>
             </div>
           ) : (
             filtered.map((c) => (
-              <ConversationItem key={c.userId} conversation={c} onClick={() => openChat(c.userId)} formatTime={formatTime} />
+              <ConversationItem
+                key={c.userId}
+                conversation={c}
+                onClick={() => openChat(c.userId)}
+                formatTime={formatTime}
+                typingUser={activeTyping.find((t) => t.userId === c.userId)?.userName}
+              />
             ))
           )}
         </div>
