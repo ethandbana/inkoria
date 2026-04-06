@@ -16,8 +16,16 @@ interface TypingContextType {
 const TypingContext = createContext<TypingContextType | undefined>(undefined);
 
 export const TypingProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user } = useAuth();
   const [activeTyping, setActiveTyping] = useState<TypingNotification[]>([]);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => setCurrentUserId(data.user?.id || null));
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_, session) => {
+      setCurrentUserId(session?.user?.id || null);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
 
   useEffect(() => {
     if (!user) return;
