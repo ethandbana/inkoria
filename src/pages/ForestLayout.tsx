@@ -12,9 +12,9 @@ import { WhatsAppShare } from '../components/WhatsAppShare';
 import { ThoughtStream } from '../components/ThoughtStream';
 import { NotificationModal } from '../components/NotificationModal';
 import { Drafts } from '../components/Drafts';
-import { VideoCall } from '../components/VideoCall';
-import IncomingCallModal from '../components/IncomingCallModal';
-import { useIncomingCalls } from '../hooks/useIncomingCalls';
+import WebRTCCallComponent from '../components/WebRTCCall';
+import WebRTCIncomingCall from '../components/WebRTCIncomingCall';
+import { useWebRTC } from '../hooks/useWebRTC';
 import { Sparkles } from 'lucide-react';
 import { 
   Home, Search, Compass, Heart, User, PlusSquare, 
@@ -733,23 +733,37 @@ const ForestLayout: React.FC = () => {
     input.click();
   };
 
-  const { incomingCall, acceptCall, declineCall } = useIncomingCalls(currentUser?.id);
-  const [activeCall, setActiveCall] = useState<{ url: string; isAudioOnly: boolean } | null>(null);
-
+  const {
+    callState: webrtcCallState,
+    activeCall: webrtcActiveCall,
+    incomingCall,
+    localStream,
+    remoteStream,
+    isMuted,
+    isVideoOff,
+    startCall: webrtcStartCall,
+    acceptCall,
+    declineCall,
+    endCall: webrtcEndCall,
+    toggleMute,
+    toggleVideo,
+  } = useWebRTC(
+    currentUser?.id,
+    currentUser?.display_name || currentUser?.username,
+    currentUser?.avatar_url
+  );
 
   const startCall = async (type: string) => {
     if (!currentUser || !selectedChat) return;
-    try {
-      const { data, error } = await supabase.functions.invoke('create-daily-room', {
-        body: { partnerId: selectedChat, callType: type.toLowerCase() },
-      });
-      if (error) throw error;
-      if (data?.url) {
-        setActiveCall({ url: data.url, isAudioOnly: type.toLowerCase() === 'audio' });
-      }
-    } catch (err: any) {
-      alert(`Failed to start call: ${err.message}`);
-    }
+    // Get partner profile for display
+    const { data: partner } = await supabase.from('profiles').select('display_name, username, avatar_url').eq('id', selectedChat).single();
+    const callType = type.toLowerCase() === 'video' ? 'video' : 'audio' as const;
+    webrtcStartCall(
+      selectedChat,
+      partner?.display_name || partner?.username || 'User',
+      partner?.avatar_url || null,
+      callType
+    );
   };
 
   const handleBackgroundUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -2005,18 +2019,25 @@ const ForestLayout: React.FC = () => {
     <div style={{ minHeight: '100vh', position: 'relative' }}>
       <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundImage: `url(${backgroundImage})`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundAttachment: 'fixed', zIndex: 0 }} />
       <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0, 0, 0, 0.25)', zIndex: 1 }} />
-      {activeCall && <VideoCall roomUrl={activeCall.url} isAudioOnly={activeCall.isAudioOnly} onLeave={() => setActiveCall(null)} />}
+      {(webrtcCallState === "calling" || webrtcCallState === "connected") && webrtcActiveCall && (
+        <WebRTCCallComponent
+          callType={webrtcActiveCall.callType}
+          partnerName={webrtcActiveCall.partnerName}
+          partnerAvatar={webrtcActiveCall.partnerAvatar}
+          callState={webrtcCallState as "calling" | "connected"}
+          localStream={localStream}
+          remoteStream={remoteStream}
+          isMuted={isMuted}
+          isVideoOff={isVideoOff}
+          onToggleMute={toggleMute}
+          onToggleVideo={toggleVideo}
+          onEndCall={webrtcEndCall}
+        />
+      )}
       {incomingCall && (
-        <IncomingCallModal
-          callerName={incomingCall.callerName}
-          callerAvatar={incomingCall.callerAvatar}
-          callType={incomingCall.callType}
-          onAccept={() => {
-            const call = acceptCall();
-            if (call) {
-              setActiveCall({ url: call.roomUrl, isAudioOnly: call.callType === "audio" });
-            }
-          }}
+        <WebRTCIncomingCall
+          call={incomingCall}
+          onAccept={acceptCall}
           onDecline={declineCall}
         />
       )}

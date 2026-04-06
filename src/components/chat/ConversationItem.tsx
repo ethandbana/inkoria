@@ -12,9 +12,10 @@ interface ConversationItemProps {
   conversation: Conversation;
   onClick: () => void;
   formatTime: (t: string) => string;
+  typingUser?: string;
 }
 
-const ConversationItem = ({ conversation: c, onClick, formatTime }: ConversationItemProps) => {
+const ConversationItem = ({ conversation: c, onClick, formatTime, typingUser }: ConversationItemProps) => {
   const initial = c.displayName.charAt(0).toUpperCase();
 
   return (
@@ -33,7 +34,11 @@ const ConversationItem = ({ conversation: c, onClick, formatTime }: Conversation
           <span className="text-sm font-semibold font-body">{c.displayName}</span>
           <span className="text-xs text-muted-foreground font-body">{formatTime(c.lastTime)}</span>
         </div>
-        <p className="text-sm text-muted-foreground font-body truncate">{c.lastMessage}</p>
+        {typingUser ? (
+          <p className="text-sm text-green-500 font-body truncate italic">✍️ {typingUser} is typing...</p>
+        ) : (
+          <p className="text-sm text-muted-foreground font-body truncate">{c.lastMessage}</p>
+        )}
       </div>
     </button>
   );

@@ -3,6 +3,7 @@ import { useAuth } from './hooks/useAuth';
 import AuthComponent from './components/Auth';
 import ForestLayout from './pages/ForestLayout';
 import { ThemeProvider } from './contexts/ThemeContext';
+import { TypingProvider } from './contexts/TypingContext';
 
 function App() {
   const { user, loading } = useAuth();
@@ -24,12 +25,14 @@ function App() {
 
   return (
     <ThemeProvider>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/auth" element={!user ? <AuthComponent /> : <Navigate to="/" />} />
-          <Route path="/*" element={user ? <ForestLayout /> : <Navigate to="/auth" />} />
-        </Routes>
-      </BrowserRouter>
+      <TypingProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/auth" element={!user ? <AuthComponent /> : <Navigate to="/" />} />
+            <Route path="/*" element={user ? <ForestLayout /> : <Navigate to="/auth" />} />
+          </Routes>
+        </BrowserRouter>
+      </TypingProvider>
     </ThemeProvider>
   );
 }
