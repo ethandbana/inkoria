@@ -40,6 +40,73 @@ export function useWebRTC(userId: string | undefined, userDisplayName?: string, 
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const pendingOfferRef = useRef<RTCSessionDescriptionInit | null>(null);
 
+  const cleanup = useCallback(() => {
+    if (peerConnectionRef.current) {
+      peerConnectionRef.current.close();
+      peerConnectionRef.current = null;
+    }
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach((track) => track.stop());
+      localStreamRef.current = null;
+    }
+    setLocalStream(null);
+    setRemoteStream(null);
+    setCallState("idle");
+    setActiveCall(null);
+    setIncomingCall(null);
+    setIsMuted(false);
+    setIsVideoOff(false);
+    pendingOfferRef.current = null;
+  }, []);
+
+  const sendSignal = useCallback(
+    (targetUserId: string, payload: Omit<SignalPayload, "from">) => {
+      const targetChannel = supabase.channel(`webrtc-signal-${targetUserId}`, {
+        config: { broadcast: { self: false } },
+      });
+      targetChannel.subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          targetChannel.send({
+            type: "broadcast",
+            event: "signal",
+            payload: { ...payload, from: userId! } as SignalPayload,
+          });
+          setTimeout(() => supabase.removeChannel(targetChannel), 2000);
+        }
+      });
+    },
+    [userId]
+  );
+
+  const createPeerConnection = useCallback(
+    (partnerId: string) => {
+      const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+
+      pc.onicecandidate = (event) => {
+        if (event.candidate) {
+          sendSignal(partnerId, {
+            type: "ice-candidate",
+            candidate: event.candidate.toJSON(),
+          });
+        }
+      };
+
+      pc.ontrack = (event) => {
+        setRemoteStream(event.streams[0]);
+      };
+
+      pc.oniceconnectionstatechange = () => {
+        if (pc.iceConnectionState === "disconnected" || pc.iceConnectionState === "failed") {
+          cleanup();
+        }
+      };
+
+      peerConnectionRef.current = pc;
+      return pc;
+    },
+    [sendSignal, cleanup]
+  );
+
   // Set up the signaling channel
   useEffect(() => {
     if (!userId) return;
@@ -100,56 +167,7 @@ export function useWebRTC(userId: string | undefined, userDisplayName?: string, 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [userId]);
-
-  const sendSignal = useCallback(
-    (targetUserId: string, payload: Omit<SignalPayload, "from">) => {
-      const targetChannel = supabase.channel(`webrtc-signal-${targetUserId}`, {
-        config: { broadcast: { self: false } },
-      });
-      targetChannel.subscribe((status) => {
-        if (status === "SUBSCRIBED") {
-          targetChannel.send({
-            type: "broadcast",
-            event: "signal",
-            payload: { ...payload, from: userId! } as SignalPayload,
-          });
-          // Unsubscribe after a short delay to allow message delivery
-          setTimeout(() => supabase.removeChannel(targetChannel), 2000);
-        }
-      });
-    },
-    [userId]
-  );
-
-  const createPeerConnection = useCallback(
-    (partnerId: string) => {
-      const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
-
-      pc.onicecandidate = (event) => {
-        if (event.candidate) {
-          sendSignal(partnerId, {
-            type: "ice-candidate",
-            candidate: event.candidate.toJSON(),
-          });
-        }
-      };
-
-      pc.ontrack = (event) => {
-        setRemoteStream(event.streams[0]);
-      };
-
-      pc.oniceconnectionstatechange = () => {
-        if (pc.iceConnectionState === "disconnected" || pc.iceConnectionState === "failed") {
-          cleanup();
-        }
-      };
-
-      peerConnectionRef.current = pc;
-      return pc;
-    },
-    [sendSignal]
-  );
+  }, [userId, cleanup]);
 
   const startCall = useCallback(
     async (partnerId: string, partnerName: string, partnerAvatar: string | null, callType: "audio" | "video") => {
@@ -190,7 +208,7 @@ export function useWebRTC(userId: string | undefined, userDisplayName?: string, 
         cleanup();
       }
     },
-    [userId, userDisplayName, userAvatar, createPeerConnection, sendSignal]
+    [userId, userDisplayName, userAvatar, createPeerConnection, sendSignal, cleanup]
   );
 
   const acceptCall = useCallback(async () => {
@@ -222,7 +240,7 @@ export function useWebRTC(userId: string | undefined, userDisplayName?: string, 
       console.error("Error accepting call:", error);
       cleanup();
     }
-  }, [incomingCall, createPeerConnection, sendSignal]);
+  }, [incomingCall, createPeerConnection, sendSignal, cleanup]);
 
   const declineCall = useCallback(() => {
     if (incomingCall) {
@@ -238,7 +256,7 @@ export function useWebRTC(userId: string | undefined, userDisplayName?: string, 
       sendSignal(activeCall.partnerId, { type: "call-end" });
     }
     cleanup();
-  }, [activeCall, sendSignal]);
+  }, [activeCall, sendSignal, cleanup]);
 
   const toggleMute = useCallback(() => {
     if (localStreamRef.current) {
@@ -258,25 +276,6 @@ export function useWebRTC(userId: string | undefined, userDisplayName?: string, 
         setIsVideoOff(!videoTrack.enabled);
       }
     }
-  }, []);
-
-  const cleanup = useCallback(() => {
-    if (peerConnectionRef.current) {
-      peerConnectionRef.current.close();
-      peerConnectionRef.current = null;
-    }
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach((track) => track.stop());
-      localStreamRef.current = null;
-    }
-    setLocalStream(null);
-    setRemoteStream(null);
-    setCallState("idle");
-    setActiveCall(null);
-    setIncomingCall(null);
-    setIsMuted(false);
-    setIsVideoOff(false);
-    pendingOfferRef.current = null;
   }, []);
 
   return {
